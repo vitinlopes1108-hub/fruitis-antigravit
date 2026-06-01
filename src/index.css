@@ -6,7 +6,29 @@
   --font-sans: "Nunito", ui-sans-serif, system-ui, sans-serif;
 }
 
-/* Custom scrollbar */
+/* ── PWA Anti-Zoom Fixes ───────────────────────────────────────── */
+html {
+  /* Prevents text resize on orientation change */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+* {
+  /* Prevents double-tap zoom on all elements */
+  touch-action: manipulation;
+}
+
+/* Prevents iOS from zooming in on input focus (font must be >= 16px) */
+input, select, textarea {
+  font-size: 16px !important;
+}
+
+/* Remove tap highlight flash on mobile */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ── Custom scrollbar ──────────────────────────────────────────── */
 ::-webkit-scrollbar {
   width: 4px;
 }
@@ -32,3 +54,4 @@
 .animate-pulse-slow {
   animation: pulse-slow 2s infinite ease-in-out;
 }
+
