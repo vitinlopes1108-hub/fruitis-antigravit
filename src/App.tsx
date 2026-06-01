@@ -972,6 +972,8 @@ interface AdminDashboardProps {
   setClientNotif: (val: boolean) => void;
   whatsappNumber: string;
   setWhatsappNumber: (val: string) => void;
+  onRefreshOrders: () => void;
+  loadingOrders: boolean;
 }
 
 export function AdminDashboard({ 
@@ -988,7 +990,9 @@ export function AdminDashboard({
   clientNotif,
   setClientNotif,
   whatsappNumber,
-  setWhatsappNumber
+  setWhatsappNumber,
+  onRefreshOrders,
+  loadingOrders,
 }: AdminDashboardProps) {
   const [tab, setTab] = useState<'orders' | 'products' | 'settings'>('orders');
   
@@ -1103,7 +1107,7 @@ export function AdminDashboard({
         {tab === 'orders' && (
           <div className="space-y-4">
             
-            {/* Simple Dashboard card indicators */}
+            {/* Dashboard card indicators + refresh button */}
             <div className="grid grid-cols-2 gap-3">
               <div className={`p-3 rounded-xl border text-center ${darkMode ? 'bg-white/5 border-purple-500/10' : 'bg-white border-purple-950/10 shadow-sm'}`}>
                 <p className="text-[10px] uppercase font-bold text-purple-400 tracking-wider">Total Pedidos</p>
@@ -1114,6 +1118,17 @@ export function AdminDashboard({
                 <p className="text-lg font-black text-purple-500 mt-1.5">{fmt(revenueValue)}</p>
               </div>
             </div>
+            <button
+              onClick={onRefreshOrders}
+              disabled={loadingOrders}
+              className={`w-full py-2 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-2 ${
+                darkMode ? 'bg-white/5 border-purple-500/20 text-purple-300 hover:bg-purple-500/10' : 'bg-white border-purple-950/10 text-purple-600 hover:bg-purple-50 shadow-sm'
+              } ${loadingOrders ? 'opacity-50 cursor-wait' : ''}`}
+            >
+              {loadingOrders ? (
+                <span className="inline-block w-3 h-3 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" />
+              ) : '🔄'} {loadingOrders ? 'Carregando pedidos...' : `Atualizar pedidos (${orders.length})`}
+            </button>
 
             {/* List orders */}
             {orders.length === 0 ? (
@@ -1450,16 +1465,24 @@ export default function App() {
     });
   }, []);
 
-  // Load orders from Supabase — roda no mount E sempre que entra no painel admin
-  useEffect(() => {
+  // Carrega pedidos do Supabase — roda no mount E toda vez que entra no painel admin
+  const loadOrders = () => {
     setLoadingOrders(true);
     fetchOrders().then((data) => {
-      // Só atualiza se vier dados (não apaga pedidos existentes em caso de erro)
-      if (data.length > 0) setOrders(data);
+      setOrders(data); // sempre atualiza, mesmo que vazio
       setLoadingOrders(false);
-    });
-  }, [screen === 'admin']); // re-roda ao abrir o painel admin
+    }).catch(() => setLoadingOrders(false));
+  };
 
+  useEffect(() => {
+    loadOrders();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // mount
+
+  useEffect(() => {
+    if (screen === 'admin') loadOrders(); // re-carrega sempre que entra no admin
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [screen]);
 
   const [orderStatuses, setOrderStatuses] = useState<Record<number, OrderStatus>>(() => {
     try {
@@ -1881,6 +1904,8 @@ export default function App() {
                 setWhatsappNumber(val);
                 localStorage.setItem('fg_whatsapp_number', val);
               }}
+              onRefreshOrders={loadOrders}
+              loadingOrders={loadingOrders}
             />
           </motion.div>
         )}

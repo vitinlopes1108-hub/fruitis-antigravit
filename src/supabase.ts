@@ -72,7 +72,8 @@ export async function fetchOrders(): Promise<Order[]> {
   const { data, error } = await supabase
     .from('pedidos_v2')
     .select('*')
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .range(0, 999); // garante ate 1000 pedidos sem truncar
 
   if (error) {
     console.error('Erro ao buscar pedidos:', error);
