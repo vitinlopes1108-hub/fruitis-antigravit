@@ -141,3 +141,39 @@ export async function deleteOrder(id: number): Promise<boolean> {
   if (error) { console.error('Erro ao deletar pedido:', error); return false; }
   return true;
 }
+
+// ── REALTIME ─────────────────────────────────────────────────────────────────
+
+function mapRowToOrder(row: any): Order {
+  return {
+    id: row.id,
+    date: new Date(row.created_at).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }),
+    name: row.nome,
+    phone: row.telefone,
+    address: row.endereco,
+    neighborhood: row.bairro,
+    city: row.cidade,
+    complement: row.complemento,
+    payment: row.pagamento,
+    change: row.troco,
+    items: Array.isArray(row.itens) ? row.itens : [],
+    subtotal: Number(row.subtotal),
+    total: Number(row.total),
+    status: row.status || 'pendente',
+  };
+}
+
+export function subscribeToNewOrders(callback: (order: Order) => void) {
+  const channel = supabase
+    .channel('realtime-pedidos')
+    .on(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'pedidos_v2' },
+      (payload) => {
+        callback(mapRowToOrder(payload.new));
+      }
+    )
+    .subscribe();
+
+  return channel;
+}

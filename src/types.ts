@@ -39,6 +39,7 @@ export interface Order {
   items: CartItem[];
   subtotal: number;
   total: number;
+  status?: string;
 }
 
 export interface Customer {

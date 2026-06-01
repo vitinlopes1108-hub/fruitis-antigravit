@@ -9,6 +9,7 @@ import {
   insertOrder,
   updateOrderStatus as dbUpdateOrderStatus,
   deleteOrder as dbDeleteOrder,
+  subscribeToNewOrders,
 } from './supabase';
 import { 
   ShoppingCart, 
@@ -1448,14 +1449,16 @@ export default function App() {
     });
   }, []);
 
-  // Load orders from Supabase on mount
+  // Load orders from Supabase — roda no mount E sempre que entra no painel admin
   useEffect(() => {
     setLoadingOrders(true);
     fetchOrders().then((data) => {
-      setOrders(data);
+      // Só atualiza se vier dados (não apaga pedidos existentes em caso de erro)
+      if (data.length > 0) setOrders(data);
       setLoadingOrders(false);
     });
-  }, []);
+  }, [screen === 'admin']); // re-roda ao abrir o painel admin
+
 
   const [orderStatuses, setOrderStatuses] = useState<Record<number, OrderStatus>>(() => {
     try {
@@ -1487,6 +1490,26 @@ export default function App() {
       console.error('Failed to trigger notification', e);
     }
   };
+
+  // Supabase Realtime — notifica admin sobre novos pedidos em tempo real
+  useEffect(() => {
+    if (screen !== 'admin') return;
+
+    const channel = subscribeToNewOrders((newOrder) => {
+      setOrders((prev) => {
+        if (prev.find((o) => o.id === newOrder.id)) return prev;
+        return [newOrder, ...prev];
+      });
+      if (adminNotifEnabled) {
+        handleNotify(
+          '🍓 Novo Pedido Recebido!',
+          `Cliente ${newOrder.name} pediu ${newOrder.items.length} item(s)! Total: R$ ${newOrder.total.toFixed(2).replace('.', ',')}`
+        );
+      }
+    });
+
+    return () => { channel.unsubscribe(); };
+  }, [screen, adminNotifEnabled]);
 
   const updateOrderStatus = async (orderId: number, status: OrderStatus) => {
     const nextStatuses = { ...orderStatuses, [orderId]: status };
