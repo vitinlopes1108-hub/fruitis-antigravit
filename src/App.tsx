@@ -1480,7 +1480,19 @@ export default function App() {
   }, []); // mount
 
   useEffect(() => {
-    if (screen === 'admin') loadOrders(); // re-carrega sempre que entra no admin
+    if (screen !== 'admin') return;
+
+    // Carrega imediatamente ao entrar no admin
+    loadOrders();
+
+    // Polling a cada 10s — garante novos pedidos mesmo sem Supabase Realtime configurado
+    const interval = setInterval(() => {
+      fetchOrders().then((data) => {
+        setOrders(data);
+      });
+    }, 10000);
+
+    return () => clearInterval(interval);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [screen]);
 
