@@ -1540,8 +1540,22 @@ export default function App() {
     setOrderStatuses(nextStatuses);
     localStorage.setItem('fg_orders_status', JSON.stringify(nextStatuses));
 
+    // Envia WhatsApp para o cliente ANTES do await (window.open precisa de gesto do usuario)
+    const order = orders.find((o) => o.id === orderId);
+    if (order && (status === 'saiu' || status === 'chegou')) {
+      // Limpa o numero e garante prefixo 55 (Brasil)
+      const rawPhone = order.phone.replace(/\D/g, '');
+      const phone = rawPhone.startsWith('55') ? rawPhone : `55${rawPhone}`;
+      const firstName = order.name.split(' ')[0];
+
+      const msg = status === 'saiu'
+        ? `Ola ${firstName}! Seu pedido da *Frutinhas Geladas* saiu para entrega e ja esta a caminho! Em breve estara na sua porta. `
+        : `Seu pedido chegou! O entregador esta na sua porta agora. Aproveite, ${firstName}! `;
+
+      window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank');
+    }
+
     // Persiste status no Supabase
-    // A notificacao ao CLIENTE e enviada automaticamente via Supabase Realtime no dispositivo dele
     await dbUpdateOrderStatus(orderId, status);
   };
 
