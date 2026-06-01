@@ -1009,13 +1009,13 @@ export function AdminDashboard({
   const handleCreateProduct = () => {
     if (!npName.trim()) return;
     const newProduct: Product = {
-      id: Date.now(),
+      id: 0, // id=0 so upsertProduct correctly does INSERT (not UPDATE)
       name: npName.trim(),
       badge: npBadge.trim(),
       description: npDescription.trim(),
       flavors: [],
     };
-    setProducts(prev => [...prev, newProduct]);
+    setProducts((prev: Product[]) => [...prev, newProduct]);
     setNpName('');
     setNpDescription('');
     setNpBadge('');
@@ -1776,20 +1776,25 @@ export default function App() {
               setProducts={async (updater) => {
                 // Support both direct value and functional updater
                 const next = typeof updater === 'function' ? updater(products) : updater;
-                // Detect added/updated products and upsert to Supabase
-                for (const p of next) {
-                  const existing = products.find((x) => x.id === p.id);
+                // Build final array with real DB ids after insert/update
+                const finalNext = [...next];
+                for (let i = 0; i < finalNext.length; i++) {
+                  const p = finalNext[i];
+                  // A product with id=0 is new (needs INSERT)
+                  // A product whose id doesn't match any existing is also new
+                  const existing = p.id > 0 ? products.find((x) => x.id === p.id) : null;
                   if (!existing || JSON.stringify(existing) !== JSON.stringify(p)) {
-                    await upsertProduct(p);
+                    const saved = await upsertProduct(p);
+                    if (saved) finalNext[i] = saved; // Use real DB id
                   }
                 }
-                // Detect deleted products
+                // Detect deleted products and remove from Supabase
                 for (const p of products) {
-                  if (!next.find((x) => x.id === p.id)) {
+                  if (p.id > 0 && !finalNext.find((x) => x.id === p.id)) {
                     await dbDeleteProduct(p.id);
                   }
                 }
-                setProducts(next);
+                setProducts(finalNext);
               }}
               orders={orders}
               setOrders={async (updater) => {
