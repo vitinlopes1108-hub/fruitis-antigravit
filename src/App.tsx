@@ -1709,7 +1709,13 @@ export default function App() {
               setCart={setCart}
               onBack={() => setScreen('store')}
               onCheckout={async (order) => {
-                // Save to Supabase and get the real DB id
+                // ⚠️ IMPORTANTE: window.open() DEVE ser chamado ANTES de qualquer await.
+                // Após um await, o browser PWA considera que não é mais um gesto do usuário
+                // e bloqueia a abertura de novas janelas (popup blocker).
+                const link = buildWhatsAppLink(order);
+                window.open(link, '_blank');
+
+                // Salva no Supabase e obtém o id real do banco
                 const saved = await insertOrder(order);
                 const finalOrder = saved || order;
 
@@ -1717,10 +1723,6 @@ export default function App() {
                 setLastOrder(finalOrder);
                 localStorage.setItem('fg_last_order', JSON.stringify(finalOrder));
                 setCart([]);
-
-                // Automatically trigger WhatsApp sharing window
-                const link = buildWhatsAppLink(finalOrder);
-                window.open(link, '_blank');
 
                 if (adminNotifEnabled) {
                   handleNotify('🍓 Novo Pedido Recebido!', `Cliente ${order.name} acabou de pedir ${order.items.length} item(s)!`);
