@@ -177,3 +177,20 @@ export function subscribeToNewOrders(callback: (order: Order) => void) {
 
   return channel;
 }
+
+// Subscription para o CLIENTE receber notificações de status do SEU pedido
+export function subscribeToOrderStatus(orderId: number, callback: (status: string) => void) {
+  const channel = supabase
+    .channel(`order-status-${orderId}`)
+    .on(
+      'postgres_changes',
+      { event: 'UPDATE', schema: 'public', table: 'pedidos_v2', filter: `id=eq.${orderId}` },
+      (payload) => {
+        const newStatus = payload.new?.status;
+        if (newStatus) callback(newStatus);
+      }
+    )
+    .subscribe();
+
+  return channel;
+}

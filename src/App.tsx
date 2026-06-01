@@ -10,6 +10,7 @@ import {
   updateOrderStatus as dbUpdateOrderStatus,
   deleteOrder as dbDeleteOrder,
   subscribeToNewOrders,
+  subscribeToOrderStatus,
 } from './supabase';
 import { 
   ShoppingCart, 
@@ -1491,19 +1492,26 @@ export default function App() {
     }
   };
 
-  // Supabase Realtime — notifica admin sobre novos pedidos em tempo real
+  // Supabase Realtime -- notifica ADMIN sobre NOVOS pedidos em tempo real
   useEffect(() => {
     if (screen !== 'admin') return;
 
+    // Captura IDs ja conhecidos para NAO notificar pedidos existentes ao abrir o app
+    const existingIds = new Set(orders.map((o) => o.id));
+
     const channel = subscribeToNewOrders((newOrder) => {
+      if (existingIds.has(newOrder.id)) return; // ja existia, ignorar
+      existingIds.add(newOrder.id);
+
       setOrders((prev) => {
         if (prev.find((o) => o.id === newOrder.id)) return prev;
         return [newOrder, ...prev];
       });
+
       if (adminNotifEnabled) {
         handleNotify(
-          '🍓 Novo Pedido Recebido!',
-          `Cliente ${newOrder.name} pediu ${newOrder.items.length} item(s)! Total: R$ ${newOrder.total.toFixed(2).replace('.', ',')}`
+          'Novo Pedido Recebido!',
+          `Cliente ${newOrder.name} fez ${newOrder.items.length} item(s)! Total: R$ ${newOrder.total.toFixed(2).replace('.', ',')}`
         );
       }
     });
@@ -1511,21 +1519,30 @@ export default function App() {
     return () => { channel.unsubscribe(); };
   }, [screen, adminNotifEnabled]);
 
+  // Supabase Realtime -- notifica CLIENTE sobre status do SEU pedido
+  useEffect(() => {
+    if (!lastOrder || screen === 'admin') return;
+    if (!clientNotifEnabled) return;
+
+    const channel = subscribeToOrderStatus(lastOrder.id, (status) => {
+      if (status === 'saiu') {
+        handleNotify('Pedido a caminho!', 'Seu pedido saiu para entrega! Fique de olho.');
+      } else if (status === 'chegou') {
+        handleNotify('Motoboy na porta!', 'Seu pedido chegou! O entregador esta na porta.');
+      }
+    });
+
+    return () => { channel.unsubscribe(); };
+  }, [lastOrder?.id, clientNotifEnabled, screen]);
+
   const updateOrderStatus = async (orderId: number, status: OrderStatus) => {
     const nextStatuses = { ...orderStatuses, [orderId]: status };
     setOrderStatuses(nextStatuses);
     localStorage.setItem('fg_orders_status', JSON.stringify(nextStatuses));
 
-    // Persist status to Supabase
+    // Persiste status no Supabase
+    // A notificacao ao CLIENTE e enviada automaticamente via Supabase Realtime no dispositivo dele
     await dbUpdateOrderStatus(orderId, status);
-
-    if (clientNotifEnabled) {
-      if (status === 'saiu') {
-        handleNotify('🛵 Pedido a caminho!', 'Seu pedido saiu para entrega! Fique de olho. 🍓');
-      } else if (status === 'chegou') {
-        handleNotify('🔔 Motoboy na porta!', 'Seu pedido chegou! O entregador está na porta. 🎉');
-      }
-    }
   };
 
   const buildWhatsAppLink = (order: Order) => {
