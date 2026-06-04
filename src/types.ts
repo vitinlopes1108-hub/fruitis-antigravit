@@ -4,6 +4,8 @@ export interface Flavor {
   price: number;
   emoji: string;
   color: string;
+  stock: number | null;  // null = sem controle de estoque
+  active: boolean;       // false = desativado/indisponível
 }
 
 export interface Product {
@@ -48,3 +50,11 @@ export interface Customer {
 }
 
 export type OrderStatus = 'pendente' | 'saiu' | 'chegou';
+
+export interface AuditLog {
+  id: number;
+  action: string;
+  target_id: number;
+  details: object;
+  created_at: string;
+}

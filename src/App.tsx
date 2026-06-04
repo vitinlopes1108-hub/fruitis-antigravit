@@ -4,11 +4,14 @@ import { Product, CartItem, Order, Customer, OrderStatus } from './types';
 import {
   fetchProducts,
   fetchOrders,
+  fetchOrdersByPhone,
   upsertProduct,
   deleteProduct as dbDeleteProduct,
   insertOrder,
   updateOrderStatus as dbUpdateOrderStatus,
   deleteOrder as dbDeleteOrder,
+  decrementStock,
+  logAudit,
   subscribeToNewOrders,
   subscribeToOrderStatus,
 } from './supabase';
@@ -38,7 +41,17 @@ import {
   FileText,
   Smartphone,
   Copy,
-  ExternalLink
+  ExternalLink,
+  BarChart2,
+  Package,
+  RefreshCw,
+  History,
+  TrendingUp,
+  Users,
+  Award,
+  ToggleLeft,
+  ToggleRight,
+  ShieldAlert,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 // @ts-ignore
@@ -873,9 +886,10 @@ interface OrderSuccessProps {
   order: Order;
   orderStatus: OrderStatus;
   onActionNew: () => void;
+  onViewHistory?: () => void;
 }
 
-export function OrderSuccess({ darkMode, order, orderStatus, onActionNew }: OrderSuccessProps) {
+export function OrderSuccess({ darkMode, order, orderStatus, onActionNew, onViewHistory }: OrderSuccessProps) {
   const steps = [
     { key: "pendente", label: "Pedido recebido via WhatsApp", icon: "📋", s: "Recebido" },
     { key: "saiu", label: "Saiu para entrega", icon: "🛵", s: "A caminho" },
@@ -952,6 +966,285 @@ export function OrderSuccess({ darkMode, order, orderStatus, onActionNew }: Orde
       >
         🛍️ Voltar ao Cardápio / Comprar Mais
       </button>
+      {onViewHistory && (
+        <button
+          onClick={onViewHistory}
+          className={`mt-3 w-full max-w-sm py-3 px-4 rounded-xl font-bold text-sm border transition-all ${
+            darkMode ? 'border-purple-500/30 text-purple-400 bg-white/5' : 'border-purple-500/20 text-purple-700 bg-purple-50/30'
+          }`}
+        >
+          📋 Ver Meus Pedidos
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ── CUSTOMER HISTORY COMPONENT ───────────────────────────────────────────────
+interface CustomerHistoryProps {
+  darkMode: boolean;
+  customer: Customer;
+  onBack: () => void;
+  onRepeatOrder: (items: CartItem[]) => void;
+}
+
+export function CustomerHistory({ darkMode, customer, onBack, onRepeatOrder }: CustomerHistoryProps) {
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+
+  useEffect(() => {
+    setLoading(true);
+    fetchOrdersByPhone(customer.phone).then((data) => {
+      setOrders(data);
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  }, [customer.phone]);
+
+  const getStatusInfo = (status?: string) => {
+    switch (status) {
+      case 'chegou': return { label: 'Entregue', color: 'text-emerald-400', bg: 'bg-emerald-500/10 border-emerald-500/30', icon: '✅' };
+      case 'saiu':   return { label: 'A caminho', color: 'text-amber-400', bg: 'bg-amber-500/10 border-amber-500/30', icon: '🛵' };
+      default:        return { label: 'Aguardando', color: 'text-purple-400', bg: 'bg-purple-500/10 border-purple-500/30', icon: '📋' };
+    }
+  };
+
+  return (
+    <div className="flex-1 flex flex-col h-full overflow-hidden">
+      {/* Header */}
+      <div className={`p-4 border-b flex items-center gap-3 flex-shrink-0 ${
+        darkMode ? 'bg-[#0c0118]/95 border-purple-500/10' : 'bg-white/95 border-[#1a0030]/10'
+      } backdrop-blur-md`}>
+        <button onClick={onBack} className="p-2 text-purple-400 hover:text-purple-300 transition-colors">
+          <span className="text-xl">←</span>
+        </button>
+        <div className="flex-1">
+          <h2 className="font-brand text-lg tracking-wide text-purple-400">Meus Pedidos</h2>
+          <p className={`text-[11px] ${darkMode ? 'text-white/50' : 'text-[#1a0030]/50'}`}>{customer.name}</p>
+        </div>
+        <div className={`p-2 rounded-xl border ${
+          darkMode ? 'bg-white/5 border-purple-500/15' : 'bg-purple-50 border-purple-200'
+        }`}>
+          <History size={16} className="text-purple-400" />
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto p-4 pb-10 space-y-3">
+
+        {loading ? (
+          <div className="flex flex-col items-center justify-center py-24 gap-4">
+            <div className="w-10 h-10 border-3 border-purple-500 border-t-transparent rounded-full animate-spin" />
+            <p className="text-sm text-purple-400 font-semibold animate-pulse">Buscando seus pedidos...</p>
+          </div>
+        ) : orders.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-24 gap-3 text-center">
+            <div className={`w-20 h-20 rounded-full flex items-center justify-center text-4xl ${
+              darkMode ? 'bg-white/5' : 'bg-purple-50'
+            }`}>📦</div>
+            <h3 className="font-bold text-base">Nenhum pedido encontrado</h3>
+            <p className={`text-xs px-6 leading-relaxed ${
+              darkMode ? 'text-white/50' : 'text-[#1a0030]/50'
+            }`}>
+              Você ainda não fez nenhum pedido com o número <strong>{customer.phone}</strong>. Que tal explorar nosso catálogo?
+            </p>
+            <button
+              onClick={onBack}
+              className="mt-2 py-2.5 px-6 rounded-xl text-white font-bold text-sm bg-gradient-to-r from-purple-700 to-purple-500 shadow-md active:scale-98 transition-all"
+            >
+              🛍️ Explorar Catálogo
+            </button>
+          </div>
+        ) : (
+          <>
+            {/* Summary strip */}
+            <div className={`p-4 rounded-2xl border flex gap-4 ${
+              darkMode ? 'bg-purple-500/5 border-purple-500/15' : 'bg-purple-50 border-purple-200'
+            }`}>
+              <div className="text-center flex-1">
+                <p className="text-[10px] uppercase font-bold text-purple-400 tracking-wider">Pedidos</p>
+                <p className="text-2xl font-black mt-0.5">{orders.length}</p>
+              </div>
+              <div className={`w-px ${ darkMode ? 'bg-purple-500/15' : 'bg-purple-200' }`} />
+              <div className="text-center flex-1">
+                <p className="text-[10px] uppercase font-bold text-purple-400 tracking-wider">Total Gasto</p>
+                <p className="text-lg font-black text-purple-400 mt-0.5">{fmt(orders.reduce((a, o) => a + o.total, 0))}</p>
+              </div>
+              <div className={`w-px ${ darkMode ? 'bg-purple-500/15' : 'bg-purple-200' }`} />
+              <div className="text-center flex-1">
+                <p className="text-[10px] uppercase font-bold text-purple-400 tracking-wider">Entregues</p>
+                <p className="text-2xl font-black text-emerald-400 mt-0.5">{orders.filter(o => o.status === 'chegou').length}</p>
+              </div>
+            </div>
+
+            {/* Orders list */}
+            {orders.map((order) => {
+              const statusInfo = getStatusInfo(order.status);
+              const isExpanded = expandedId === order.id;
+
+              return (
+                <motion.div
+                  key={order.id}
+                  layout
+                  className={`rounded-2xl border overflow-hidden transition-all ${
+                    darkMode ? 'bg-white/5 border-purple-500/10' : 'bg-white border-purple-950/10 shadow-sm'
+                  }`}
+                >
+                  {/* Order header — always visible */}
+                  <button
+                    className="w-full p-4 text-left"
+                    onClick={() => setExpandedId(isExpanded ? null : order.id)}
+                  >
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <span className="text-[10px] font-black text-purple-400 uppercase tracking-wider">
+                          Pedido #{String(order.id).slice(-6)}
+                        </span>
+                        <p className={`text-[11px] mt-0.5 ${ darkMode ? 'text-white/50' : 'text-[#1a0030]/50' }`}>
+                          {order.date}
+                        </p>
+                      </div>
+                      <div className="flex flex-col items-end gap-1.5">
+                        <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full border tracking-wider ${statusInfo.bg} ${statusInfo.color}`}>
+                          {statusInfo.icon} {statusInfo.label}
+                        </span>
+                        <span className="font-black text-sm text-purple-400">{fmt(order.total)}</span>
+                      </div>
+                    </div>
+
+                    {/* Items preview */}
+                    <div className="mt-2 flex gap-1 flex-wrap">
+                      {order.items.slice(0, 3).map((item) => (
+                        <span key={item.key} className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          darkMode ? 'bg-white/8 text-white/70' : 'bg-purple-50 text-[#1a0030]/70'
+                        }`}>
+                          {item.emoji} {item.flavorName} ×{item.qty}
+                        </span>
+                      ))}
+                      {order.items.length > 3 && (
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          darkMode ? 'bg-white/5 text-purple-400' : 'bg-purple-50 text-purple-600'
+                        }`}>
+                          +{order.items.length - 3} mais
+                        </span>
+                      )}
+                    </div>
+
+                    <div className={`mt-2 text-[10px] flex items-center justify-end gap-1 ${
+                      darkMode ? 'text-white/30' : 'text-[#1a0030]/30'
+                    }`}>
+                      {isExpanded ? 'Recolher ▲' : 'Ver detalhes ▼'}
+                    </div>
+                  </button>
+
+                  {/* Expanded details */}
+                  <AnimatePresence>
+                    {isExpanded && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className={`border-t ${ darkMode ? 'border-purple-500/10' : 'border-purple-100' }`}
+                      >
+                        <div className="p-4 space-y-4">
+                          {/* Status tracker */}
+                          <div>
+                            <p className="text-[10px] font-bold uppercase text-purple-400 tracking-wider mb-3">Status da Entrega</p>
+                            <div className="space-y-2">
+                              {[
+                                { key: 'pendente', label: 'Pedido recebido', icon: '📋' },
+                                { key: 'saiu', label: 'Saiu para entrega', icon: '🛵' },
+                                { key: 'chegou', label: 'Entregue com sucesso', icon: '✅' },
+                              ].map((step, idx) => {
+                                const stepIndex = ['pendente', 'saiu', 'chegou'].indexOf(order.status || 'pendente');
+                                const isCompleted = idx <= stepIndex;
+                                const isCurrent = idx === stepIndex;
+                                return (
+                                  <div key={step.key} className={`flex items-center gap-3 p-2.5 rounded-xl transition-all ${
+                                    isCurrent
+                                      ? 'bg-purple-500/10 border border-purple-500/30'
+                                      : isCompleted
+                                        ? darkMode ? 'bg-white/3' : 'bg-purple-50/50'
+                                        : 'opacity-30'
+                                  }`}>
+                                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-sm flex-shrink-0 ${
+                                      isCompleted ? 'bg-purple-500 text-white' : darkMode ? 'bg-white/10' : 'bg-purple-100'
+                                    }`}>
+                                      {isCompleted ? step.icon : idx + 1}
+                                    </div>
+                                    <span className={`text-xs font-bold flex-1 ${
+                                      isCompleted ? '' : darkMode ? 'text-white/40' : 'text-[#1a0030]/40'
+                                    }`}>{step.label}</span>
+                                    {isCurrent && (
+                                      <div className="w-2 h-2 rounded-full bg-purple-500 animate-ping flex-shrink-0" />
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {/* Items breakdown */}
+                          <div>
+                            <p className="text-[10px] font-bold uppercase text-purple-400 tracking-wider mb-2">Itens do Pedido</p>
+                            <div className={`rounded-xl border divide-y ${
+                              darkMode ? 'border-purple-500/10 divide-purple-500/10' : 'border-purple-100 divide-purple-100'
+                            }`}>
+                              {order.items.map((item) => (
+                                <div key={item.key} className="flex justify-between items-center px-3 py-2.5">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-base">{item.emoji}</span>
+                                    <div>
+                                      <p className="text-[11px] font-bold leading-snug">{item.productName}</p>
+                                      <p className="text-[10px] text-purple-400">{item.flavorName}</p>
+                                    </div>
+                                  </div>
+                                  <div className="text-right">
+                                    <p className="text-xs font-black">{fmt(item.qty * item.price)}</p>
+                                    <p className={`text-[10px] ${ darkMode ? 'text-white/40' : 'text-[#1a0030]/40' }`}>×{item.qty}</p>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Delivery address */}
+                          <div className={`p-3 rounded-xl border text-left ${
+                            darkMode ? 'bg-white/3 border-purple-500/10' : 'bg-purple-50/30 border-purple-100'
+                          }`}>
+                            <p className="text-[10px] font-bold uppercase text-purple-400 tracking-wider mb-1.5">📍 Entrega</p>
+                            <p className="text-xs font-bold">{order.address}, {order.neighborhood}</p>
+                            <p className={`text-[10px] mt-0.5 ${ darkMode ? 'text-white/50' : 'text-[#1a0030]/50' }`}>{order.city}</p>
+                            {order.complement && (
+                              <p className="text-[10px] text-purple-400 mt-0.5">🏠 {order.complement}</p>
+                            )}
+                            <p className="text-[10px] font-bold text-purple-400 mt-2">💳 {order.payment}</p>
+                          </div>
+
+                          {/* Total + Repeat */}
+                          <div className="flex justify-between items-center">
+                            <div>
+                              <p className={`text-[10px] ${ darkMode ? 'text-white/50' : 'text-[#1a0030]/50' }`}>Total pago</p>
+                              <p className="font-brand text-xl text-purple-400">{fmt(order.total)}</p>
+                            </div>
+                            <button
+                              onClick={() => onRepeatOrder(order.items)}
+                              className="py-2.5 px-5 rounded-xl text-white font-bold text-xs bg-gradient-to-r from-purple-700 to-purple-500 shadow-md active:scale-98 transition-all flex items-center gap-1.5"
+                            >
+                              <RefreshCw size={12} /> Repetir Pedido
+                            </button>
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </motion.div>
+              );
+            })}
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -974,6 +1267,7 @@ interface AdminDashboardProps {
   setWhatsappNumber: (val: string) => void;
   onRefreshOrders: () => void;
   loadingOrders: boolean;
+  onDeleteOrder: (orderId: number) => Promise<void>;
 }
 
 export function AdminDashboard({ 
@@ -993,8 +1287,9 @@ export function AdminDashboard({
   setWhatsappNumber,
   onRefreshOrders,
   loadingOrders,
+  onDeleteOrder,
 }: AdminDashboardProps) {
-  const [tab, setTab] = useState<'orders' | 'products' | 'settings'>('orders');
+  const [tab, setTab] = useState<'orders' | 'products' | 'settings' | 'metrics' | 'stock'>('orders');
   
   // Model insertion state
   const [showAddProp, setShowAddProp] = useState(false);
@@ -1072,6 +1367,83 @@ export function AdminDashboard({
     );
   };
 
+  // Delete order confirmation state
+  const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
+  const [deletingOrderId, setDeletingOrderId] = useState<number | null>(null);
+
+  // Toggle flavor active state
+  const handleToggleFlavor = (productId: number, flavorId: number) => {
+    setProducts(prev =>
+      prev.map(p => {
+        if (p.id !== productId) return p;
+        return {
+          ...p,
+          flavors: p.flavors.map(f =>
+            f.id === flavorId ? { ...f, active: !f.active } : f
+          ),
+        };
+      })
+    );
+  };
+
+  // Update flavor stock
+  const handleSetFlavorStock = (productId: number, flavorId: number, stock: number | null) => {
+    setProducts(prev =>
+      prev.map(p => {
+        if (p.id !== productId) return p;
+        return {
+          ...p,
+          flavors: p.flavors.map(f =>
+            f.id === flavorId ? { ...f, stock } : f
+          ),
+        };
+      })
+    );
+  };
+
+  // Metrics calculations
+  const today = new Date();
+  const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+  const todayOrders = orders.filter(o => new Date(o.date) >= startOfDay || o.date.includes(today.toLocaleDateString('pt-BR').split('/').reverse().join('-').slice(0, 10)));
+  const monthOrders = orders.filter(o => {
+    const d = new Date(o.date);
+    return !isNaN(d.getTime()) ? d >= startOfMonth : o.date.includes(`${String(today.getMonth()+1).padStart(2,'0')}/${today.getFullYear()}`);
+  });
+  const totalRevenue = orders.reduce((acc, o) => acc + o.total, 0);
+  const todayRevenue = todayOrders.reduce((acc, o) => acc + o.total, 0);
+  const monthRevenue = monthOrders.reduce((acc, o) => acc + o.total, 0);
+  const avgTicket = orders.length > 0 ? totalRevenue / orders.length : 0;
+  const uniqueClients = new Set(orders.map(o => o.phone)).size;
+
+  // Best selling flavor
+  const flavorSales: Record<string, { name: string; product: string; qty: number }> = {};
+  orders.forEach(o => o.items.forEach(i => {
+    const key = `${i.productId}-${i.flavorId}`;
+    if (!flavorSales[key]) flavorSales[key] = { name: i.flavorName, product: i.productName, qty: 0 };
+    flavorSales[key].qty += i.qty;
+  }));
+  const bestFlavor = Object.values(flavorSales).sort((a, b) => b.qty - a.qty)[0];
+
+  // Last 7 days sales data for chart
+  const last7 = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() - (6 - i));
+    const label = d.toLocaleDateString('pt-BR', { weekday: 'short' });
+    const dateStr = d.toLocaleDateString('pt-BR');
+    const dayRevenue = orders.filter(o => o.date.startsWith(dateStr) || o.date.includes(dateStr)).reduce((acc, o) => acc + o.total, 0);
+    return { label, value: dayRevenue };
+  });
+  const maxBarValue = Math.max(...last7.map(d => d.value), 1);
+
+  // Low stock flavors
+  const lowStockFlavors: { productName: string; flavorName: string; stock: number }[] = [];
+  products.forEach(p => p.flavors.forEach(f => {
+    if (f.stock !== null && f.stock <= 3) {
+      lowStockFlavors.push({ productName: p.name, flavorName: f.name, stock: f.stock });
+    }
+  }));
+
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden">
       
@@ -1079,23 +1451,39 @@ export function AdminDashboard({
       <div className={`flex border-b flex-shrink-0 ${darkMode ? 'bg-[#0a0115] border-purple-500/10' : 'bg-purple-100/15 border-purple-900/10'}`}>
         <button 
           onClick={() => setTab('orders')}
-          className={`flex-1 py-1.5 text-xs font-bold transition-all border-b-2 font-brand ${
+          className={`flex-1 py-1.5 text-[10px] font-bold transition-all border-b-2 font-brand ${
             tab === 'orders' ? 'text-purple-500 border-purple-500' : 'text-purple-400/50 border-transparent'
           }`}
         >
-          📋 PEDIDOS ({orders.length})
+          📋 PEDIDOS
+        </button>
+        <button 
+          onClick={() => setTab('metrics')}
+          className={`flex-1 py-1.5 text-[10px] font-bold transition-all border-b-2 font-brand ${
+            tab === 'metrics' ? 'text-purple-500 border-purple-500' : 'text-purple-400/50 border-transparent'
+          }`}
+        >
+          📊 MÉTRICAS
+        </button>
+        <button 
+          onClick={() => setTab('stock')}
+          className={`flex-1 py-1.5 text-[10px] font-bold transition-all border-b-2 font-brand ${
+            tab === 'stock' ? 'text-purple-500 border-purple-500' : 'text-purple-400/50 border-transparent'
+          }`}
+        >
+          📦 ESTOQUE
         </button>
         <button 
           onClick={() => setTab('products')}
-          className={`flex-1 py-1.5 text-xs font-bold transition-all border-b-2 font-brand ${
+          className={`flex-1 py-1.5 text-[10px] font-bold transition-all border-b-2 font-brand ${
             tab === 'products' ? 'text-purple-500 border-purple-500' : 'text-purple-400/50 border-transparent'
           }`}
         >
-          🛍️ PRODUTOS
+          🛍️ PROD.
         </button>
         <button 
           onClick={() => setTab('settings')}
-          className={`flex-1 py-1.5 text-xs font-bold transition-all border-b-2 font-brand ${
+          className={`flex-1 py-1.5 text-[10px] font-bold transition-all border-b-2 font-brand ${
             tab === 'settings' ? 'text-purple-500 border-purple-500' : 'text-purple-400/50 border-transparent'
           }`}
         >
@@ -1204,10 +1592,220 @@ export function AdminDashboard({
                         </button>
                       </div>
                     )}
+
+                    {/* Delete Order Button */}
+                    <button
+                      onClick={() => setDeleteConfirmId(o.id)}
+                      className="mt-2 w-full py-1.5 rounded-xl text-xs font-bold border border-red-500/20 text-red-400/70 hover:bg-red-500/10 hover:text-red-400 transition-all flex items-center justify-center gap-1"
+                    >
+                      <Trash2 size={12} /> Excluir Pedido
+                    </button>
                   </div>
                 );
               })
             )}
+          </div>
+        )}
+
+        {/* ── DELETE CONFIRMATION MODAL ───────────────────────────────────────── */}
+        {deleteConfirmId !== null && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/70 backdrop-blur-sm">
+            <div className={`w-full max-w-sm p-6 rounded-2xl border shadow-2xl ${
+              darkMode ? 'bg-[#0c0118] border-red-500/20' : 'bg-white border-red-500/20'
+            }`}>
+              <div className="text-center mb-4">
+                <ShieldAlert size={40} className="mx-auto text-red-400 mb-3" />
+                <h3 className="font-bold text-lg">Excluir Pedido?</h3>
+                <p className={`text-xs mt-2 ${darkMode ? 'text-white/60' : 'text-gray-500'}`}>
+                  Esta ação não pode ser desfeita. O pedido será removido do Supabase, o estoque dos itens será restaurado e a exclusão será registrada no histórico.
+                </p>
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setDeleteConfirmId(null)}
+                  className={`flex-1 py-2.5 rounded-xl text-sm font-bold border ${
+                    darkMode ? 'border-white/10 text-white/70 hover:bg-white/5' : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  Cancelar
+                </button>
+                <button
+                  disabled={deletingOrderId === deleteConfirmId}
+                  onClick={async () => {
+                    const id = deleteConfirmId;
+                    setDeletingOrderId(id);
+                    setDeleteConfirmId(null);
+                    await onDeleteOrder(id);
+                    setDeletingOrderId(null);
+                  }}
+                  className="flex-1 py-2.5 rounded-xl text-sm font-bold bg-red-500 text-white hover:bg-red-600 flex items-center justify-center gap-2"
+                >
+                  {deletingOrderId === deleteConfirmId ? (
+                    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  ) : <Trash2 size={14} />} Excluir
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── METRICS TAB ─────────────────────────────────────────────────── */}
+        {tab === 'metrics' && (
+          <div className="space-y-4">
+            <h2 className="font-brand text-lg text-purple-400">Dashboard de Métricas</h2>
+
+            {/* KPI Cards */}
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                { label: 'Vendas Hoje', value: fmt(todayRevenue), icon: <Calendar size={16} />, sub: `${todayOrders.length} pedido(s)` },
+                { label: 'Vendas do Mês', value: fmt(monthRevenue), icon: <TrendingUp size={16} />, sub: `${monthOrders.length} pedido(s)` },
+                { label: 'Total Geral', value: fmt(totalRevenue), icon: <DollarSign size={16} />, sub: `${orders.length} pedidos` },
+                { label: 'Ticket Médio', value: fmt(avgTicket), icon: <BarChart2 size={16} />, sub: 'por pedido' },
+                { label: 'Clientes Únicos', value: String(uniqueClients), icon: <Users size={16} />, sub: 'por telefone' },
+                { label: 'Melhor Sabor', value: bestFlavor ? bestFlavor.name : '-', icon: <Award size={16} />, sub: bestFlavor ? `${bestFlavor.qty}x vendido` : 'sem dados' },
+              ].map((card, idx) => (
+                <div key={idx} className={`p-3 rounded-xl border ${
+                  darkMode ? 'bg-white/5 border-purple-500/10' : 'bg-white border-purple-950/10 shadow-sm'
+                }`}>
+                  <div className="flex items-center gap-1.5 text-purple-400 mb-1.5">
+                    {card.icon}
+                    <span className="text-[10px] font-bold uppercase tracking-wider">{card.label}</span>
+                  </div>
+                  <p className="text-base font-black leading-tight truncate">{card.value}</p>
+                  <p className="text-[10px] opacity-50 mt-0.5">{card.sub}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* 7-day Sales Chart */}
+            <div className={`p-4 rounded-2xl border ${
+              darkMode ? 'bg-white/5 border-purple-500/10' : 'bg-white border-purple-950/10 shadow-sm'
+            }`}>
+              <p className="text-[11px] font-bold uppercase text-purple-400 tracking-wider mb-4">Vendas — Últimos 7 dias</p>
+              <div className="flex items-end gap-1.5 h-28">
+                {last7.map((day, i) => (
+                  <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                    <div
+                      className="w-full rounded-t-lg bg-gradient-to-t from-purple-700 to-purple-400 transition-all duration-500"
+                      style={{ height: `${Math.max(4, (day.value / maxBarValue) * 100)}%`, opacity: day.value > 0 ? 1 : 0.2 }}
+                    />
+                    <span className="text-[9px] opacity-60 capitalize">{day.label}</span>
+                  </div>
+                ))}
+              </div>
+              {orders.length === 0 && (
+                <p className="text-center text-xs opacity-50 mt-4">Sem dados de vendas ainda</p>
+              )}
+            </div>
+
+            {/* Best Sellers */}
+            <div className={`p-4 rounded-2xl border ${
+              darkMode ? 'bg-white/5 border-purple-500/10' : 'bg-white border-purple-950/10 shadow-sm'
+            }`}>
+              <p className="text-[11px] font-bold uppercase text-purple-400 tracking-wider mb-3">Top Sabores Vendidos</p>
+              {Object.values(flavorSales).sort((a, b) => b.qty - a.qty).slice(0, 5).map((f, i) => (
+                <div key={i} className="flex items-center gap-3 mb-2">
+                  <span className="text-xs font-black text-purple-400 w-4">{i + 1}.</span>
+                  <div className="flex-1">
+                    <p className="text-xs font-bold">{f.name}</p>
+                    <p className="text-[10px] opacity-50">{f.product}</p>
+                  </div>
+                  <div
+                    className="h-1.5 rounded-full bg-purple-500"
+                    style={{ width: `${Math.max(10, (f.qty / (Object.values(flavorSales)[0]?.qty || 1)) * 80)}px` }}
+                  />
+                  <span className="text-xs font-black text-purple-400">{f.qty}x</span>
+                </div>
+              ))}
+              {Object.values(flavorSales).length === 0 && (
+                <p className="text-xs opacity-50 text-center py-4">Sem vendas registradas</p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── STOCK TAB ───────────────────────────────────────────────────── */}
+        {tab === 'stock' && (
+          <div className="space-y-4">
+            <h2 className="font-brand text-lg text-purple-400">Controle de Estoque</h2>
+
+            {/* Low stock alert */}
+            {lowStockFlavors.length > 0 && (
+              <div className={`p-4 rounded-2xl border ${
+                darkMode ? 'bg-red-500/10 border-red-500/20' : 'bg-red-50 border-red-200'
+              }`}>
+                <p className="text-xs font-bold text-red-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                  <AlertCircle size={13} /> Estoque Baixo / Zerado
+                </p>
+                {lowStockFlavors.map((f, i) => (
+                  <div key={i} className="flex justify-between items-center text-xs py-1 border-b border-red-500/10 last:border-0">
+                    <span className="font-bold">{f.productName} — {f.flavorName}</span>
+                    <span className={`font-black ${f.stock === 0 ? 'text-red-500' : 'text-amber-400'}`}>
+                      {f.stock === 0 ? 'ESGOTADO' : `${f.stock} un.`}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Stock per product/flavor */}
+            {products.map((p) => (
+              <div key={p.id} className={`p-4 rounded-2xl border text-left ${
+                darkMode ? 'bg-white/5 border-purple-500/10' : 'bg-white border-purple-950/10 shadow-sm'
+              }`}>
+                <h4 className="font-brand text-base text-purple-400 mb-3">{p.name}</h4>
+                <div className="space-y-2">
+                  {p.flavors.map((f) => (
+                    <div key={f.id} className={`flex items-center gap-2 p-2.5 rounded-xl border ${
+                      !f.active
+                        ? 'opacity-50 border-red-500/20 bg-red-500/5'
+                        : f.stock === 0
+                          ? 'border-red-500/20 bg-red-500/5'
+                          : darkMode ? 'border-white/5 bg-black/10' : 'border-purple-900/10 bg-purple-50/10'
+                    }`}>
+                      <span className="text-base">{f.emoji}</span>
+                      <span className="flex-1 text-xs font-bold truncate">{f.name}</span>
+                      
+                      {/* Toggle active */}
+                      <button
+                        onClick={() => handleToggleFlavor(p.id, f.id)}
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                          f.active
+                            ? 'text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/10'
+                            : 'text-red-400 border-red-500/30 hover:bg-red-500/10'
+                        }`}
+                      >
+                        {f.active ? 'Ativo' : 'OFF'}
+                      </button>
+
+                      {/* Stock quantity */}
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          min="0"
+                          placeholder="∞"
+                          value={f.stock ?? ''}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            handleSetFlavorStock(p.id, f.id, val === '' ? null : Number(val));
+                          }}
+                          className={`w-14 text-center text-xs font-bold rounded-lg p-1 border ${
+                            darkMode ? 'bg-white/5 border-purple-500/15 text-white' : 'bg-purple-50 border-purple-500/20 text-[#1a0030]'
+                          }`}
+                        />
+                        <span className="text-[9px] opacity-50">un</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <button
+                  onClick={() => setProducts(prev => prev)} // Triggers setProducts -> Supabase via the async wrapper
+                  className="mt-3 w-full py-2 text-xs font-bold rounded-xl bg-purple-500/10 text-purple-400 border border-purple-500/20 hover:bg-purple-500/15"
+                >
+                  💾 Salvar Estoque — {p.name}
+                </button>
+              </div>
+            ))}
           </div>
         )}
 
@@ -1594,6 +2192,47 @@ export default function App() {
     await dbUpdateOrderStatus(orderId, status);
   };
 
+  const handleDeleteOrder = async (orderId: number) => {
+    const order = orders.find((o) => o.id === orderId);
+    if (!order) return;
+
+    // Registra auditoria ANTES de deletar
+    await logAudit('delete_order', orderId, {
+      order,
+      deleted_at: new Date().toISOString(),
+      deleted_by: 'admin',
+    });
+
+    // Restaura estoque dos itens do pedido excluído
+    const restoredProducts = products.map((product) => {
+      const hasItems = order.items.some((i) => i.productId === product.id);
+      if (!hasItems) return product;
+      return {
+        ...product,
+        flavors: product.flavors.map((flavor) => {
+          const item = order.items.find(
+            (i) => i.productId === product.id && i.flavorId === flavor.id
+          );
+          if (!item || flavor.stock === null) return flavor;
+          return { ...flavor, stock: (flavor.stock ?? 0) + item.qty };
+        }),
+      };
+    });
+
+    // Salva estoque restaurado
+    for (const product of restoredProducts) {
+      const original = products.find((p) => p.id === product.id);
+      if (original && JSON.stringify(original.flavors) !== JSON.stringify(product.flavors)) {
+        await upsertProduct(product);
+      }
+    }
+    setProducts(restoredProducts);
+
+    // Deleta do Supabase e estado local
+    await dbDeleteOrder(orderId);
+    setOrders((prev) => prev.filter((o) => o.id !== orderId));
+  };
+
   const buildWhatsAppLink = (order: Order) => {
     const lines = [
       "🍓 *FRUTINHAS GELADAS — NOVO PEDIDO!* 🍓",
@@ -1760,6 +2399,15 @@ export default function App() {
                 >
                   {darkMode ? <Sun size={16} /> : <Moon size={16} />}
                 </button>
+                <button
+                  onClick={() => setScreen('history')}
+                  title="Meus Pedidos"
+                  className={`p-2 rounded-xl transition-all border ${
+                    darkMode ? 'bg-white/5 border-purple-500/15 text-purple-400' : 'bg-purple-950/10 border-purple-800/10 text-purple-800'
+                  }`}
+                >
+                  <History size={16} />
+                </button>
                 <button 
                   onClick={handleLogout}
                   title="Desconectar"
@@ -1813,8 +2461,13 @@ export default function App() {
                 localStorage.setItem('fg_last_order', JSON.stringify(finalOrder));
                 setCart([]);
 
+                // Baixa no estoque (assíncrono, não bloqueia)
+                decrementStock(order.items, products).then(() => {
+                  fetchProducts().then((updated) => { if (updated.length > 0) setProducts(updated); });
+                });
+
                 if (adminNotifEnabled) {
-                  handleNotify('🍓 Novo Pedido Recebido!', `Cliente ${order.name} acabou de pedir ${order.items.length} item(s)!`);
+                  handleNotify('Novo Pedido!', `Cliente ${order.name} acabou de pedir ${order.items.length} item(s)!`);
                 }
 
                 setScreen('success');
@@ -1836,6 +2489,27 @@ export default function App() {
               order={lastOrder}
               orderStatus={currentOrderStatus}
               onActionNew={() => setScreen('store')}
+              onViewHistory={() => setScreen('history')}
+            />
+          </motion.div>
+        )}
+
+        {screen === 'history' && customer && (
+          <motion.div
+            key="history"
+            initial={{ opacity: 0, x: 30 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -30 }}
+            className="flex-1 flex flex-col h-screen overflow-hidden"
+          >
+            <CustomerHistory
+              darkMode={darkMode}
+              customer={customer}
+              onBack={() => setScreen(lastOrder ? 'success' : 'store')}
+              onRepeatOrder={(items) => {
+                setCart(items);
+                setScreen('cart');
+              }}
             />
           </motion.div>
         )}
@@ -1918,6 +2592,7 @@ export default function App() {
               }}
               onRefreshOrders={loadOrders}
               loadingOrders={loadingOrders}
+              onDeleteOrder={handleDeleteOrder}
             />
           </motion.div>
         )}
