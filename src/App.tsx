@@ -1495,15 +1495,39 @@ export function AdminDashboard({
         {tab === 'orders' && (
           <div className="space-y-4">
             
-            {/* Dashboard card indicators + refresh button */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className={`p-3 rounded-xl border text-center ${darkMode ? 'bg-white/5 border-purple-500/10' : 'bg-white border-purple-950/10 shadow-sm'}`}>
-                <p className="text-[10px] uppercase font-bold text-purple-400 tracking-wider">Total Pedidos</p>
-                <p className="text-2xl font-black mt-1">{orders.length}</p>
+            {/* ── Quick Stats Strip ── */}
+            <div className="grid grid-cols-2 gap-2.5">
+              <div className={`p-3 rounded-2xl border relative overflow-hidden ${
+                darkMode ? 'bg-gradient-to-br from-purple-500/15 to-purple-900/5 border-purple-500/20' : 'bg-gradient-to-br from-purple-50 to-white border-purple-200 shadow-sm'
+              }`}>
+                <div className="absolute -right-2 -top-2 opacity-10 text-5xl font-black">📅</div>
+                <p className="text-[9px] uppercase font-black text-purple-400 tracking-widest">Hoje</p>
+                <p className="text-xl font-black mt-0.5 leading-none">{fmt(todayRevenue)}</p>
+                <p className={`text-[10px] mt-1 ${ darkMode ? 'text-white/40' : 'text-[#1a0030]/40' }`}>{todayOrders.length} pedido(s)</p>
               </div>
-              <div className={`p-3 rounded-xl border text-center ${darkMode ? 'bg-white/5 border-purple-500/10' : 'bg-white border-purple-950/10 shadow-sm'}`}>
-                <p className="text-[10px] uppercase font-bold text-purple-400 tracking-wider">Faturado</p>
-                <p className="text-lg font-black text-purple-500 mt-1.5">{fmt(revenueValue)}</p>
+              <div className={`p-3 rounded-2xl border relative overflow-hidden ${
+                darkMode ? 'bg-gradient-to-br from-emerald-500/10 to-emerald-900/5 border-emerald-500/20' : 'bg-gradient-to-br from-emerald-50 to-white border-emerald-200 shadow-sm'
+              }`}>
+                <div className="absolute -right-2 -top-2 opacity-10 text-5xl font-black">📈</div>
+                <p className="text-[9px] uppercase font-black text-emerald-400 tracking-widest">Mês</p>
+                <p className="text-xl font-black mt-0.5 leading-none">{fmt(monthRevenue)}</p>
+                <p className={`text-[10px] mt-1 ${ darkMode ? 'text-white/40' : 'text-[#1a0030]/40' }`}>{monthOrders.length} pedido(s)</p>
+              </div>
+              <div className={`p-3 rounded-2xl border relative overflow-hidden ${
+                darkMode ? 'bg-gradient-to-br from-amber-500/10 to-amber-900/5 border-amber-500/20' : 'bg-gradient-to-br from-amber-50 to-white border-amber-200 shadow-sm'
+              }`}>
+                <div className="absolute -right-2 -top-2 opacity-10 text-5xl font-black">🎟️</div>
+                <p className="text-[9px] uppercase font-black text-amber-400 tracking-widest">Ticket Médio</p>
+                <p className="text-xl font-black mt-0.5 leading-none">{fmt(avgTicket)}</p>
+                <p className={`text-[10px] mt-1 ${ darkMode ? 'text-white/40' : 'text-[#1a0030]/40' }`}>por pedido</p>
+              </div>
+              <div className={`p-3 rounded-2xl border relative overflow-hidden ${
+                darkMode ? 'bg-gradient-to-br from-blue-500/10 to-blue-900/5 border-blue-500/20' : 'bg-gradient-to-br from-blue-50 to-white border-blue-200 shadow-sm'
+              }`}>
+                <div className="absolute -right-2 -top-2 opacity-10 text-5xl font-black">👥</div>
+                <p className="text-[9px] uppercase font-black text-blue-400 tracking-widest">Clientes</p>
+                <p className="text-xl font-black mt-0.5 leading-none">{uniqueClients}</p>
+                <p className={`text-[10px] mt-1 ${ darkMode ? 'text-white/40' : 'text-[#1a0030]/40' }`}>únicos</p>
               </div>
             </div>
             <button
@@ -1652,75 +1676,234 @@ export function AdminDashboard({
         {/* ── METRICS TAB ─────────────────────────────────────────────────── */}
         {tab === 'metrics' && (
           <div className="space-y-4">
-            <h2 className="font-brand text-lg text-purple-400">Dashboard de Métricas</h2>
 
-            {/* KPI Cards */}
-            <div className="grid grid-cols-2 gap-3">
-              {[
-                { label: 'Vendas Hoje', value: fmt(todayRevenue), icon: <Calendar size={16} />, sub: `${todayOrders.length} pedido(s)` },
-                { label: 'Vendas do Mês', value: fmt(monthRevenue), icon: <TrendingUp size={16} />, sub: `${monthOrders.length} pedido(s)` },
-                { label: 'Total Geral', value: fmt(totalRevenue), icon: <DollarSign size={16} />, sub: `${orders.length} pedidos` },
-                { label: 'Ticket Médio', value: fmt(avgTicket), icon: <BarChart2 size={16} />, sub: 'por pedido' },
-                { label: 'Clientes Únicos', value: String(uniqueClients), icon: <Users size={16} />, sub: 'por telefone' },
-                { label: 'Melhor Sabor', value: bestFlavor ? bestFlavor.name : '-', icon: <Award size={16} />, sub: bestFlavor ? `${bestFlavor.qty}x vendido` : 'sem dados' },
-              ].map((card, idx) => (
-                <div key={idx} className={`p-3 rounded-xl border ${
-                  darkMode ? 'bg-white/5 border-purple-500/10' : 'bg-white border-purple-950/10 shadow-sm'
-                }`}>
-                  <div className="flex items-center gap-1.5 text-purple-400 mb-1.5">
-                    {card.icon}
-                    <span className="text-[10px] font-bold uppercase tracking-wider">{card.label}</span>
-                  </div>
-                  <p className="text-base font-black leading-tight truncate">{card.value}</p>
-                  <p className="text-[10px] opacity-50 mt-0.5">{card.sub}</p>
-                </div>
-              ))}
+            {/* Header + live badge */}
+            <div className="flex items-center justify-between">
+              <h2 className="font-brand text-xl text-purple-400">📊 Métricas</h2>
+              <div className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/25 px-2.5 py-1 rounded-full">
+                <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                Tempo Real
+              </div>
             </div>
 
-            {/* 7-day Sales Chart */}
+            {/* ── KPI Hero Cards ── */}
+            <div className="grid grid-cols-2 gap-3">
+              {/* Vendas Hoje */}
+              <div className="col-span-2 p-4 rounded-2xl relative overflow-hidden bg-gradient-to-br from-purple-600/30 via-purple-800/20 to-transparent border border-purple-500/25">
+                <div className="absolute inset-0 bg-gradient-to-br from-purple-500/5 to-transparent pointer-events-none" />
+                <div className="flex justify-between items-start">
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-purple-300/70 flex items-center gap-1.5"><Calendar size={11} /> Faturamento Total Geral</p>
+                    <p className="text-3xl font-black mt-1 leading-none">{fmt(totalRevenue)}</p>
+                    <p className={`text-[11px] mt-1.5 ${darkMode ? 'text-white/50' : 'text-[#1a0030]/50'}`}>{orders.length} pedidos no total</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[9px] font-black uppercase tracking-widest text-purple-300/50">Ticket Médio</p>
+                    <p className="text-lg font-black text-purple-300 mt-0.5">{fmt(avgTicket)}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Hoje */}
+              <div className={`p-3.5 rounded-2xl border relative overflow-hidden ${
+                darkMode ? 'bg-white/5 border-purple-500/15' : 'bg-white border-purple-200 shadow-sm'
+              }`}>
+                <div className="flex items-center gap-1.5 mb-2">
+                  <div className="w-6 h-6 rounded-lg bg-purple-500/20 flex items-center justify-center">
+                    <Calendar size={12} className="text-purple-400" />
+                  </div>
+                  <span className="text-[10px] font-black uppercase tracking-wider text-purple-400">Hoje</span>
+                </div>
+                <p className="text-xl font-black">{fmt(todayRevenue)}</p>
+                <p className={`text-[10px] mt-1 ${darkMode ? 'text-white/40' : 'text-[#1a0030]/40'}`}>{todayOrders.length} ped.</p>
+              </div>
+
+              {/* Mês */}
+              <div className={`p-3.5 rounded-2xl border relative overflow-hidden ${
+                darkMode ? 'bg-white/5 border-emerald-500/15' : 'bg-white border-emerald-200 shadow-sm'
+              }`}>
+                <div className="flex items-center gap-1.5 mb-2">
+                  <div className="w-6 h-6 rounded-lg bg-emerald-500/20 flex items-center justify-center">
+                    <TrendingUp size={12} className="text-emerald-400" />
+                  </div>
+                  <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400">Mês</span>
+                </div>
+                <p className="text-xl font-black">{fmt(monthRevenue)}</p>
+                <p className={`text-[10px] mt-1 ${darkMode ? 'text-white/40' : 'text-[#1a0030]/40'}`}>{monthOrders.length} ped.</p>
+              </div>
+
+              {/* Clientes Únicos */}
+              <div className={`p-3.5 rounded-2xl border ${
+                darkMode ? 'bg-white/5 border-blue-500/15' : 'bg-white border-blue-200 shadow-sm'
+              }`}>
+                <div className="flex items-center gap-1.5 mb-2">
+                  <div className="w-6 h-6 rounded-lg bg-blue-500/20 flex items-center justify-center">
+                    <Users size={12} className="text-blue-400" />
+                  </div>
+                  <span className="text-[10px] font-black uppercase tracking-wider text-blue-400">Clientes</span>
+                </div>
+                <p className="text-xl font-black">{uniqueClients}</p>
+                <p className={`text-[10px] mt-1 ${darkMode ? 'text-white/40' : 'text-[#1a0030]/40'}`}>únicos</p>
+              </div>
+
+              {/* Melhor Sabor */}
+              <div className={`p-3.5 rounded-2xl border ${
+                darkMode ? 'bg-white/5 border-amber-500/15' : 'bg-white border-amber-200 shadow-sm'
+              }`}>
+                <div className="flex items-center gap-1.5 mb-2">
+                  <div className="w-6 h-6 rounded-lg bg-amber-500/20 flex items-center justify-center">
+                    <Award size={12} className="text-amber-400" />
+                  </div>
+                  <span className="text-[10px] font-black uppercase tracking-wider text-amber-400">#1 Sabor</span>
+                </div>
+                <p className="text-sm font-black leading-tight truncate">{bestFlavor ? bestFlavor.name : '—'}</p>
+                <p className={`text-[10px] mt-1 ${darkMode ? 'text-white/40' : 'text-[#1a0030]/40'}`}>{bestFlavor ? `${bestFlavor.qty}x vendido` : 'sem dados'}</p>
+              </div>
+            </div>
+
+            {/* ── 7-day Sales Chart ── */}
             <div className={`p-4 rounded-2xl border ${
               darkMode ? 'bg-white/5 border-purple-500/10' : 'bg-white border-purple-950/10 shadow-sm'
             }`}>
-              <p className="text-[11px] font-bold uppercase text-purple-400 tracking-wider mb-4">Vendas — Últimos 7 dias</p>
-              <div className="flex items-end gap-1.5 h-28">
-                {last7.map((day, i) => (
-                  <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                    <div
-                      className="w-full rounded-t-lg bg-gradient-to-t from-purple-700 to-purple-400 transition-all duration-500"
-                      style={{ height: `${Math.max(4, (day.value / maxBarValue) * 100)}%`, opacity: day.value > 0 ? 1 : 0.2 }}
-                    />
-                    <span className="text-[9px] opacity-60 capitalize">{day.label}</span>
-                  </div>
-                ))}
+              <div className="flex justify-between items-center mb-4">
+                <p className="text-[11px] font-black uppercase text-purple-400 tracking-wider">📈 Últimos 7 Dias</p>
+                <p className={`text-[10px] ${darkMode ? 'text-white/40' : 'text-[#1a0030]/40'}`}>
+                  {fmt(last7.reduce((a, d) => a + d.value, 0))} total
+                </p>
+              </div>
+              <div className="flex items-end gap-2 h-36">
+                {last7.map((day, i) => {
+                  const isToday = i === 6;
+                  const pct = Math.max(4, (day.value / maxBarValue) * 100);
+                  return (
+                    <div key={i} className="flex-1 flex flex-col items-center gap-1 group relative">
+                      {/* Value label on top */}
+                      {day.value > 0 && (
+                        <div className={`absolute -top-5 left-1/2 -translate-x-1/2 text-[8px] font-black whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity ${
+                          isToday ? 'text-purple-400' : darkMode ? 'text-white/60' : 'text-[#1a0030]/60'
+                        }`}>
+                          {fmt(day.value).replace('R$ ', '')}
+                        </div>
+                      )}
+                      <div
+                        className={`w-full rounded-t-xl transition-all duration-700 ${
+                          isToday
+                            ? 'bg-gradient-to-t from-purple-700 to-purple-400 shadow-lg shadow-purple-500/20'
+                            : darkMode ? 'bg-gradient-to-t from-purple-900/80 to-purple-600/50' : 'bg-gradient-to-t from-purple-300 to-purple-200'
+                        }`}
+                        style={{ height: `${pct}%`, opacity: day.value > 0 ? 1 : 0.15 }}
+                      />
+                      <span className={`text-[9px] font-bold capitalize ${
+                        isToday ? 'text-purple-400' : darkMode ? 'text-white/40' : 'text-[#1a0030]/40'
+                      }`}>{day.label}</span>
+                    </div>
+                  );
+                })}
               </div>
               {orders.length === 0 && (
-                <p className="text-center text-xs opacity-50 mt-4">Sem dados de vendas ainda</p>
+                <p className="text-center text-xs opacity-50 mt-2">Sem dados de vendas ainda</p>
               )}
             </div>
 
-            {/* Best Sellers */}
+            {/* ── Top 5 Sabores ── */}
             <div className={`p-4 rounded-2xl border ${
               darkMode ? 'bg-white/5 border-purple-500/10' : 'bg-white border-purple-950/10 shadow-sm'
             }`}>
-              <p className="text-[11px] font-bold uppercase text-purple-400 tracking-wider mb-3">Top Sabores Vendidos</p>
-              {Object.values(flavorSales).sort((a, b) => b.qty - a.qty).slice(0, 5).map((f, i) => (
-                <div key={i} className="flex items-center gap-3 mb-2">
-                  <span className="text-xs font-black text-purple-400 w-4">{i + 1}.</span>
-                  <div className="flex-1">
-                    <p className="text-xs font-bold">{f.name}</p>
-                    <p className="text-[10px] opacity-50">{f.product}</p>
-                  </div>
-                  <div
-                    className="h-1.5 rounded-full bg-purple-500"
-                    style={{ width: `${Math.max(10, (f.qty / (Object.values(flavorSales)[0]?.qty || 1)) * 80)}px` }}
-                  />
-                  <span className="text-xs font-black text-purple-400">{f.qty}x</span>
+              <p className="text-[11px] font-black uppercase text-purple-400 tracking-wider mb-4">🏆 Top Sabores Mais Vendidos</p>
+              {Object.values(flavorSales).length === 0 ? (
+                <p className="text-xs opacity-50 text-center py-6">Sem vendas registradas ainda</p>
+              ) : (
+                <div className="space-y-3">
+                  {Object.values(flavorSales).sort((a, b) => b.qty - a.qty).slice(0, 5).map((f, i) => {
+                    const maxQty = Object.values(flavorSales).sort((a, b) => b.qty - a.qty)[0]?.qty || 1;
+                    const pct = (f.qty / maxQty) * 100;
+                    const medals = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣'];
+                    return (
+                      <div key={i}>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <div className="flex items-center gap-2">
+                            <span className="text-base">{medals[i]}</span>
+                            <div>
+                              <p className="text-xs font-bold leading-tight">{f.name}</p>
+                              <p className={`text-[10px] ${darkMode ? 'text-white/40' : 'text-[#1a0030]/40'}`}>{f.product}</p>
+                            </div>
+                          </div>
+                          <span className="text-xs font-black text-purple-400">{f.qty}x</span>
+                        </div>
+                        <div className={`h-1.5 rounded-full overflow-hidden ${ darkMode ? 'bg-white/5' : 'bg-purple-100' }`}>
+                          <div
+                            className="h-full rounded-full bg-gradient-to-r from-purple-700 to-purple-400 transition-all duration-700"
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-              ))}
-              {Object.values(flavorSales).length === 0 && (
-                <p className="text-xs opacity-50 text-center py-4">Sem vendas registradas</p>
               )}
             </div>
+
+            {/* ── Pagamentos Breakdown ── */}
+            {orders.length > 0 && (() => {
+              const payMap: Record<string, number> = {};
+              orders.forEach(o => { payMap[o.payment] = (payMap[o.payment] || 0) + 1; });
+              const payEntries = Object.entries(payMap).sort((a, b) => b[1] - a[1]);
+              const payIcons: Record<string, string> = { PIX: '⚡', 'Cartão de Crédito': '💳', 'Cartão de Débito': '💳', Dinheiro: '💵' };
+              return (
+                <div className={`p-4 rounded-2xl border ${
+                  darkMode ? 'bg-white/5 border-purple-500/10' : 'bg-white border-purple-950/10 shadow-sm'
+                }`}>
+                  <p className="text-[11px] font-black uppercase text-purple-400 tracking-wider mb-4">💳 Formas de Pagamento</p>
+                  <div className="space-y-2.5">
+                    {payEntries.map(([method, count]) => (
+                      <div key={method} className="flex items-center justify-between">
+                        <span className="text-xs font-bold flex items-center gap-1.5">
+                          {payIcons[method] || '💳'} {method}
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <div className={`h-1.5 rounded-full overflow-hidden w-20 ${ darkMode ? 'bg-white/5' : 'bg-purple-100' }`}>
+                            <div
+                              className="h-full rounded-full bg-gradient-to-r from-purple-600 to-purple-400"
+                              style={{ width: `${(count / orders.length) * 100}%` }}
+                            />
+                          </div>
+                          <span className="text-[10px] font-black text-purple-400 w-6 text-right">{count}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* ── Pedidos por Status ── */}
+            {orders.length > 0 && (() => {
+              const pending = orders.filter(o => (orderStatuses[o.id] || o.status || 'pendente') === 'pendente').length;
+              const onWay = orders.filter(o => (orderStatuses[o.id] || o.status || 'pendente') === 'saiu').length;
+              const delivered = orders.filter(o => (orderStatuses[o.id] || o.status || 'pendente') === 'chegou').length;
+              return (
+                <div className={`p-4 rounded-2xl border ${
+                  darkMode ? 'bg-white/5 border-purple-500/10' : 'bg-white border-purple-950/10 shadow-sm'
+                }`}>
+                  <p className="text-[11px] font-black uppercase text-purple-400 tracking-wider mb-4">📦 Status dos Pedidos</p>
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div className={`p-3 rounded-xl border ${ darkMode ? 'bg-purple-500/10 border-purple-500/25' : 'bg-purple-50 border-purple-200' }`}>
+                      <p className="text-xl font-black text-purple-400">{pending}</p>
+                      <p className="text-[9px] font-bold uppercase tracking-wider text-purple-400/70 mt-0.5">Aguard.</p>
+                    </div>
+                    <div className={`p-3 rounded-xl border ${ darkMode ? 'bg-amber-500/10 border-amber-500/25' : 'bg-amber-50 border-amber-200' }`}>
+                      <p className="text-xl font-black text-amber-400">{onWay}</p>
+                      <p className="text-[9px] font-bold uppercase tracking-wider text-amber-400/70 mt-0.5">A Caminho</p>
+                    </div>
+                    <div className={`p-3 rounded-xl border ${ darkMode ? 'bg-emerald-500/10 border-emerald-500/25' : 'bg-emerald-50 border-emerald-200' }`}>
+                      <p className="text-xl font-black text-emerald-400">{delivered}</p>
+                      <p className="text-[9px] font-bold uppercase tracking-wider text-emerald-400/70 mt-0.5">Entregue</p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
           </div>
         )}
 
