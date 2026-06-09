@@ -21,7 +21,11 @@ import {
   incrementCustomerRanking,
   markRewardUsed,
   calcRanking,
+  fetchStoreConfig,
+  saveStoreConfig,
+  checkIsStoreOpen,
   type CustomerRanking,
+  type StoreConfig,
 } from './supabase';
 import { 
   ShoppingCart, 
@@ -652,9 +656,11 @@ interface CartViewProps {
   setCart: React.Dispatch<React.SetStateAction<CartItem[]>>;
   onBack: () => void;
   onCheckout: (order: Order) => void;
+  isStoreOpen: boolean;
+  storeConfig: StoreConfig;
 }
 
-export function CartView({ darkMode, customer, cart, setCart, onBack, onCheckout }: CartViewProps) {
+export function CartView({ darkMode, customer, cart, setCart, onBack, onCheckout, isStoreOpen, storeConfig }: CartViewProps) {
   const [step, setStep] = useState<'cart' | 'address' | 'review'>('cart');
   const [streetAddress, setStreetAddress] = useState('');
   const [neighborhood, setNeighborhood] = useState('');
@@ -879,12 +885,31 @@ export function CartView({ darkMode, customer, cart, setCart, onBack, onCheckout
           )}
 
           {step === 'review' && (
-            <button 
-              onClick={handleFinalize}
-              className="w-full py-3.5 px-4 rounded-xl text-white font-bold text-sm bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 shadow-lg active:scale-98 transition-all"
-            >
-              ✅ Finalizar & Enviar via WhatsApp
-            </button>
+            <div className="space-y-2">
+              {!isStoreOpen && (
+                <div className={`p-3 rounded-xl border text-center ${
+                  darkMode ? 'bg-red-500/10 border-red-500/25' : 'bg-red-50 border-red-300'
+                }`}>
+                  <p className="text-xs font-black text-red-400">
+                    🔴 Loja fechada no momento
+                  </p>
+                  <p className={`text-[10px] mt-1 ${darkMode ? 'text-white/55' : 'text-[#1a0030]/55'}`}>
+                    Atendemos das <strong>{storeConfig.abertura}</strong> às <strong>{storeConfig.fechamento}</strong>. Volte mais tarde!
+                  </p>
+                </div>
+              )}
+              <button 
+                onClick={handleFinalize}
+                disabled={!isStoreOpen}
+                className={`w-full py-3.5 px-4 rounded-xl text-white font-bold text-sm shadow-lg active:scale-98 transition-all ${
+                  isStoreOpen
+                    ? 'bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400'
+                    : 'bg-gray-600 opacity-50 cursor-not-allowed'
+                }`}
+              >
+                {isStoreOpen ? '✅ Finalizar & Enviar via WhatsApp' : '🔒 Loja Fechada'}
+              </button>
+            </div>
           )}
         </div>
       )}
@@ -1544,6 +1569,9 @@ interface AdminDashboardProps {
   onRefreshOrders: () => void;
   loadingOrders: boolean;
   onDeleteOrder: (orderId: number) => Promise<void>;
+  storeConfig: StoreConfig;
+  isStoreOpen: boolean;
+  onSaveStoreConfig: (cfg: StoreConfig) => Promise<void>;
 }
 
 export function AdminDashboard({ 
@@ -1564,8 +1592,19 @@ export function AdminDashboard({
   onRefreshOrders,
   loadingOrders,
   onDeleteOrder,
+  storeConfig: storeConfigProp,
+  isStoreOpen: isStoreOpenProp,
+  onSaveStoreConfig,
 }: AdminDashboardProps) {
   const [tab, setTab] = useState<'orders' | 'products' | 'settings' | 'metrics' | 'stock'>('orders');
+  const [storeConfig, setStoreConfig] = useState<StoreConfig>(storeConfigProp);
+  const [isStoreOpen, setIsStoreOpen] = useState<boolean>(isStoreOpenProp);
+
+  // Sync from parent when it changes (e.g. on initial fetch)
+  useEffect(() => {
+    setStoreConfig(storeConfigProp);
+    setIsStoreOpen(isStoreOpenProp);
+  }, [storeConfigProp, isStoreOpenProp]);
   
   // Model insertion state
   const [showAddProp, setShowAddProp] = useState(false);
@@ -2462,6 +2501,94 @@ export function AdminDashboard({
                 </div>
               </div>
             </div>
+
+            {/* ── HORÁRIO DE FUNCIONAMENTO ── */}
+            <div className={`p-4 rounded-xl border space-y-4 ${
+              darkMode ? 'bg-white/5 border-purple-500/10' : 'bg-white border-purple-950/10 shadow-sm'
+            }`}>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-black uppercase text-purple-400 tracking-wider">⏰ Horário de Funcionamento</p>
+                  <p className={`text-[10px] mt-0.5 ${ darkMode ? 'text-white/45' : 'text-[#1a0030]/50'}`}>Pedidos só podem ser finalizados neste período</p>
+                </div>
+                {/* Status badge */}
+                <div className={`text-[10px] font-black px-2.5 py-1 rounded-full border ${
+                  isStoreOpen
+                    ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400'
+                    : 'bg-red-500/15 border-red-500/30 text-red-400'
+                }`}>
+                  {isStoreOpen ? '🟢 ABERTA' : '🔴 FECHADA'}
+                </div>
+              </div>
+
+              {/* Toggle manual open/close */}
+              <div className={`flex items-center justify-between p-3 rounded-xl border ${
+                darkMode ? 'bg-black/20 border-white/5' : 'bg-gray-50 border-gray-200'
+              }`}>
+                <div>
+                  <p className="text-xs font-bold">Loja aberta manualmente</p>
+                  <p className={`text-[10px] mt-0.5 ${ darkMode ? 'text-white/40' : 'text-[#1a0030]/40'}`}>Desative para fechar a loja independente do horário</p>
+                </div>
+                <button
+                  onClick={async () => {
+                    const updated = { ...storeConfig, loja_aberta: !storeConfig.loja_aberta };
+                    setStoreConfig(updated);
+                    setIsStoreOpen(checkIsStoreOpen(updated));
+                    await onSaveStoreConfig(updated);
+                  }}
+                  className={`relative w-12 h-6 rounded-full transition-all flex-shrink-0 ${
+                    storeConfig.loja_aberta ? 'bg-emerald-500' : 'bg-gray-500'
+                  }`}
+                >
+                  <div className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-all ${
+                    storeConfig.loja_aberta ? 'left-7' : 'left-1'
+                  }`} />
+                </button>
+              </div>
+
+              {/* Open / Close time pickers */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={`block text-[10px] font-bold uppercase tracking-wider mb-1.5 ${ darkMode ? 'text-white/50' : 'text-[#1a0030]/50'}`}>Abertura</label>
+                  <input
+                    type="time"
+                    value={storeConfig.abertura}
+                    onChange={(e) => setStoreConfig(prev => ({ ...prev, abertura: e.target.value }))}
+                    className={`w-full p-2.5 rounded-xl border outline-none text-sm font-bold text-center ${
+                      darkMode ? 'bg-white/5 border-purple-500/15 text-white' : 'bg-purple-50 border-purple-200 text-[#1a0030]'
+                    }`}
+                  />
+                </div>
+                <div>
+                  <label className={`block text-[10px] font-bold uppercase tracking-wider mb-1.5 ${ darkMode ? 'text-white/50' : 'text-[#1a0030]/50'}`}>Fechamento</label>
+                  <input
+                    type="time"
+                    value={storeConfig.fechamento}
+                    onChange={(e) => setStoreConfig(prev => ({ ...prev, fechamento: e.target.value }))}
+                    className={`w-full p-2.5 rounded-xl border outline-none text-sm font-bold text-center ${
+                      darkMode ? 'bg-white/5 border-purple-500/15 text-white' : 'bg-purple-50 border-purple-200 text-[#1a0030]'
+                    }`}
+                  />
+                </div>
+              </div>
+
+              {/* Preview */}
+              <div className={`text-center text-[10px] py-1.5 rounded-lg ${ darkMode ? 'text-white/35' : 'text-[#1a0030]/40'}`}>
+                Atendimento: <strong>{storeConfig.abertura}</strong> às <strong>{storeConfig.fechamento}</strong>
+              </div>
+
+              {/* Save button */}
+              <button
+                onClick={async () => {
+                  await onSaveStoreConfig(storeConfig);
+                  setIsStoreOpen(checkIsStoreOpen(storeConfig));
+                  alert(`✅ Horário salvo!\nAbertura: ${storeConfig.abertura} | Fechamento: ${storeConfig.fechamento}`);
+                }}
+                className="w-full py-2.5 rounded-xl text-white font-bold text-sm bg-gradient-to-r from-purple-700 to-purple-500 active:scale-98 transition-all"
+              >
+                💾 Salvar Horário
+              </button>
+            </div>
           </div>
         )}
       </div>
@@ -2512,6 +2639,30 @@ export default function App() {
   const [isDesktop, setIsDesktop] = useState<boolean>(false);
   const [useSimulator, setUseSimulator] = useState<boolean>(false);
   const [copiedLink, setCopiedLink] = useState<boolean>(false);
+
+  // ── Store Config (Horário de Funcionamento) ──
+  const [storeConfig, setStoreConfig] = useState<StoreConfig>({
+    abertura: '09:00',
+    fechamento: '22:00',
+    loja_aberta: true,
+  });
+  const [isStoreOpen, setIsStoreOpen] = useState<boolean>(true);
+
+  // Recalcula se a loja está aberta sempre que storeConfig muda ou a cada 30s
+  useEffect(() => {
+    const recalc = () => setIsStoreOpen(checkIsStoreOpen(storeConfig));
+    recalc();
+    const timer = setInterval(recalc, 30000);
+    return () => clearInterval(timer);
+  }, [storeConfig]);
+
+  // Carrega config da loja no mount
+  useEffect(() => {
+    fetchStoreConfig().then((cfg) => {
+      setStoreConfig(cfg);
+      setIsStoreOpen(checkIsStoreOpen(cfg));
+    });
+  }, []);
 
   useEffect(() => {
     const checkDevice = () => {
@@ -2898,6 +3049,19 @@ export default function App() {
               </button>
             </div>
 
+            {/* ── BANNER LOJA FECHADA ── */}
+            {!isStoreOpen && (
+              <div className={`flex-shrink-0 px-4 py-2 flex items-center gap-2 ${
+                darkMode ? 'bg-red-900/20 border-b border-red-500/20' : 'bg-red-50 border-b border-red-200'
+              }`}>
+                <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse flex-shrink-0" />
+                <p className="text-xs font-bold text-red-400">
+                  Loja fechada — atendemos das <strong>{storeConfig.abertura}</strong> às <strong>{storeConfig.fechamento}</strong>
+                  {!storeConfig.loja_aberta && ' (fechado pelo administrador)'}
+                </p>
+              </div>
+            )}
+
             {/* ── CATALOG (takes available space above bottom nav) ── */}
             <div className="flex-1 overflow-hidden relative" style={{ paddingBottom: 'calc(64px + env(safe-area-inset-bottom, 0px))' }}>
               <CatalogView 
@@ -2997,6 +3161,8 @@ export default function App() {
               customer={customer}
               cart={cart}
               setCart={setCart}
+              isStoreOpen={isStoreOpen}
+              storeConfig={storeConfig}
               onBack={() => setScreen('store')}
               onCheckout={async (order) => {
                 // ⚠️ IMPORTANTE: window.open() DEVE ser chamado ANTES de qualquer await.
@@ -3161,6 +3327,13 @@ export default function App() {
               onRefreshOrders={loadOrders}
               loadingOrders={loadingOrders}
               onDeleteOrder={handleDeleteOrder}
+              storeConfig={storeConfig}
+              isStoreOpen={isStoreOpen}
+              onSaveStoreConfig={async (cfg) => {
+                await saveStoreConfig(cfg);
+                setStoreConfig(cfg);
+                setIsStoreOpen(checkIsStoreOpen(cfg));
+              }}
             />
           </motion.div>
         )}

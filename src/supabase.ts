@@ -444,3 +444,100 @@ export async function markRewardUsed(phone: string): Promise<boolean> {
     return false;
   }
 }
+
+// ── STORE CONFIG (Horário de Funcionamento) ───────────────────────────────────
+// Tabela: store_config (id int PK, abertura text, fechamento text, loja_aberta bool)
+// SQL para criar:
+//   create table store_config (
+//     id int primary key default 1,
+//     abertura text default '09:00',
+//     fechamento text default '22:00',
+//     loja_aberta boolean default true,
+//     check (id = 1)
+//   );
+//   insert into store_config (id) values (1) on conflict do nothing;
+//   alter table store_config enable row level security;
+//   create policy "public read" on store_config for select using (true);
+//   create policy "anon write" on store_config for all using (true);
+
+export interface StoreConfig {
+  abertura: string;      // "09:00"
+  fechamento: string;    // "22:00"
+  loja_aberta: boolean;  // false = fechado manualmente
+}
+
+const DEFAULT_CONFIG: StoreConfig = {
+  abertura: '09:00',
+  fechamento: '22:00',
+  loja_aberta: true,
+};
+
+const LS_KEY = 'fg_store_config';
+
+function configFromLS(): StoreConfig {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (raw) return { ...DEFAULT_CONFIG, ...JSON.parse(raw) };
+  } catch { /* ignore */ }
+  return { ...DEFAULT_CONFIG };
+}
+
+export async function fetchStoreConfig(): Promise<StoreConfig> {
+  try {
+    const { data, error } = await supabase
+      .from('store_config')
+      .select('*')
+      .eq('id', 1)
+      .maybeSingle();
+
+    if (error || !data) {
+      // Tabela ainda não existe ou erro — usa localStorage como fallback
+      return configFromLS();
+    }
+
+    const cfg: StoreConfig = {
+      abertura: data.abertura ?? DEFAULT_CONFIG.abertura,
+      fechamento: data.fechamento ?? DEFAULT_CONFIG.fechamento,
+      loja_aberta: data.loja_aberta ?? DEFAULT_CONFIG.loja_aberta,
+    };
+
+    // Sincroniza localmente
+    localStorage.setItem(LS_KEY, JSON.stringify(cfg));
+    return cfg;
+  } catch {
+    return configFromLS();
+  }
+}
+
+export async function saveStoreConfig(config: StoreConfig): Promise<boolean> {
+  // Salva localmente imediatamente
+  localStorage.setItem(LS_KEY, JSON.stringify(config));
+  try {
+    const { error } = await supabase
+      .from('store_config')
+      .upsert({ id: 1, ...config }, { onConflict: 'id' });
+
+    if (error) {
+      console.warn('store_config table not found or error, saved to localStorage only:', error.message);
+      return true; // localStorage ainda foi salvo
+    }
+    return true;
+  } catch {
+    return true; // localStorage ainda foi salvo
+  }
+}
+
+/** Verifica se a loja está aberta no momento atual */
+export function checkIsStoreOpen(config: StoreConfig): boolean {
+  if (!config.loja_aberta) return false;
+
+  const now = new Date();
+  const [openH, openM] = config.abertura.split(':').map(Number);
+  const [closeH, closeM] = config.fechamento.split(':').map(Number);
+
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+  const openMinutes = openH * 60 + openM;
+  const closeMinutes = closeH * 60 + closeM;
+
+  return currentMinutes >= openMinutes && currentMinutes < closeMinutes;
+}
