@@ -555,3 +555,31 @@ export function checkIsStoreOpen(config: StoreConfig): boolean {
 
   return currentMinutes >= openMinutes && currentMinutes < closeMinutes;
 }
+
+/**
+ * Assina mudanças em tempo real na configuração da loja (horário, aberto/fechado).
+ * Qualquer dispositivo conectado recebe o novo config imediatamente quando o admin salva.
+ */
+export function subscribeToStoreConfig(callback: (config: StoreConfig) => void) {
+  const channel = supabase
+    .channel('realtime-store-config')
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'store_config', filter: 'id=eq.1' },
+      (payload) => {
+        const row = payload.new as any;
+        if (!row) return;
+        const cfg: StoreConfig = {
+          abertura: row.abertura ?? '09:00',
+          fechamento: row.fechamento ?? '22:00',
+          loja_aberta: row.loja_aberta ?? true,
+        };
+        // Atualiza localStorage local para próxima abertura offline
+        localStorage.setItem('fg_store_config', JSON.stringify(cfg));
+        callback(cfg);
+      }
+    )
+    .subscribe();
+
+  return channel;
+}

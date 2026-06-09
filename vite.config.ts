@@ -38,17 +38,37 @@ export default defineConfig(() => {
           ],
         },
         workbox: {
+          // Força o SW a assumir controle imediato sem esperar o reload
+          skipWaiting: true,
+          clientsClaim: true,
+          // Remove SWs antigos automaticamente
+          cleanupOutdatedCaches: true,
+          // Só cacheia o app shell (HTML/CSS/JS) — NUNCA dados da API
           globPatterns: ['**/*.{js,css,html,ico,png,svg,jpg,jpeg,webp}'],
           runtimeCaching: [
             {
-              urlPattern: /^https:\/\/xewyrqzxlpjbwvjeqwgl\.supabase\.co\/.*/i,
-              handler: 'NetworkFirst',
+              // Supabase REST API — SEMPRE vai direto para a rede, sem cache
+              // Isso garante que qualquer device sempre recebe dados atualizados
+              urlPattern: /^https:\/\/.*\.supabase\.co\/rest\/.*/i,
+              handler: 'NetworkOnly',
+            },
+            {
+              // Supabase Realtime WebSocket — nunca cachear
+              urlPattern: /^wss:\/\/.*/i,
+              handler: 'NetworkOnly',
+            },
+            {
+              // Supabase Auth endpoints — sempre rede
+              urlPattern: /^https:\/\/.*\.supabase\.co\/auth\/.*/i,
+              handler: 'NetworkOnly',
+            },
+            {
+              // Fontes do Google — cache longo, raramente mudam
+              urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
+              handler: 'StaleWhileRevalidate',
               options: {
-                cacheName: 'supabase-cache',
-                expiration: {
-                  maxEntries: 50,
-                  maxAgeSeconds: 60 * 60 * 24, // 24h
-                },
+                cacheName: 'google-fonts-cache',
+                expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 * 30 },
               },
             },
           ],

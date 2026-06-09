@@ -17,6 +17,7 @@ import {
   subscribeToNewOrders,
   subscribeToOrderStatus,
   subscribeToProductChanges,
+  subscribeToStoreConfig,
   fetchCustomerRanking,
   incrementCustomerRanking,
   markRewardUsed,
@@ -2842,20 +2843,42 @@ export default function App() {
   });
   const [isStoreOpen, setIsStoreOpen] = useState<boolean>(true);
 
-  // Recalcula se a loja está aberta sempre que storeConfig muda ou a cada 30s
+  // Recalcula se a loja está aberta a cada 60s (caso o horário expire durante o uso)
   useEffect(() => {
     const recalc = () => setIsStoreOpen(checkIsStoreOpen(storeConfig));
     recalc();
-    const timer = setInterval(recalc, 30000);
+    const timer = setInterval(recalc, 60000);
     return () => clearInterval(timer);
   }, [storeConfig]);
 
-  // Carrega config da loja no mount
+  // Carrega config da loja no mount + assina Realtime para updates instantâneos
+  // (quando admin muda horário, TODOS os devices recebem em <1s via WebSocket)
   useEffect(() => {
     fetchStoreConfig().then((cfg) => {
       setStoreConfig(cfg);
       setIsStoreOpen(checkIsStoreOpen(cfg));
     });
+
+    const channel = subscribeToStoreConfig((cfg) => {
+      setStoreConfig(cfg);
+      setIsStoreOpen(checkIsStoreOpen(cfg));
+    });
+
+    return () => { channel.unsubscribe(); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── PWA: detecta nova versão do service worker e recarrega automaticamente ──
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return;
+
+    const handleControllerChange = () => {
+      // Novo SW tomou controle — recarrega para aplicar a nova versão
+      window.location.reload();
+    };
+
+    navigator.serviceWorker.addEventListener('controllerchange', handleControllerChange);
+    return () => navigator.serviceWorker.removeEventListener('controllerchange', handleControllerChange);
   }, []);
 
   useEffect(() => {
@@ -2888,7 +2911,7 @@ export default function App() {
   const loadOrders = () => {
     setLoadingOrders(true);
     fetchOrders().then((data) => {
-      setOrders(data); // sempre atualiza, mesmo que vazio
+      setOrders(data);
       setLoadingOrders(false);
     }).catch(() => setLoadingOrders(false));
   };
@@ -2898,20 +2921,42 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // mount
 
+  // Polling de pedidos — garante atualização mesmo quando Realtime cai
+  // Roda SEMPRE (admin e cliente) para manter dados fresh
   useEffect(() => {
     if (screen !== 'admin') return;
-
-    // Carrega imediatamente ao entrar no admin
     loadOrders();
 
-    // Polling a cada 10s — garante novos pedidos mesmo sem Supabase Realtime configurado
+    // Polling a cada 15s no painel admin
     const interval = setInterval(() => {
-      fetchOrders().then((data) => {
-        setOrders(data);
-      });
-    }, 10000);
+      fetchOrders().then((data) => { if (data.length > 0 || orders.length > 0) setOrders(data); });
+    }, 15000);
 
     return () => clearInterval(interval);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [screen]);
+
+  // Recarrega dados quando o usuário volta para o app (alt+tab, minimizar, etc)
+  // Crucial para PWA onde o app fica em background por horas
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        // Recarrega config da loja (pode ter mudado enquanto estava em background)
+        fetchStoreConfig().then((cfg) => {
+          setStoreConfig(cfg);
+          setIsStoreOpen(checkIsStoreOpen(cfg));
+        });
+        // Recarrega pedidos se está no admin
+        if (screen === 'admin') {
+          fetchOrders().then((data) => { if (data.length >= 0) setOrders(data); });
+        }
+        // Recarrega produtos (estoque pode ter mudado)
+        fetchProducts().then((data) => { if (data.length > 0) setProducts(data); });
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [screen]);
 
@@ -2946,7 +2991,7 @@ export default function App() {
     }
   };
 
-  // Supabase Realtime -- sync produtos em tempo real (estoque atualiza para todos)
+  // Supabase Realtime — sync produtos em tempo real (estoque atualiza para todos)
   useEffect(() => {
     const channel = subscribeToProductChanges((updatedProduct) => {
       setProducts(prev => prev.map(p => p.id === updatedProduct.id ? updatedProduct : p));
@@ -2954,15 +2999,14 @@ export default function App() {
     return () => { channel.unsubscribe(); };
   }, []);
 
-  // Supabase Realtime -- notifica ADMIN sobre NOVOS pedidos em tempo real
+  // Supabase Realtime — notifica ADMIN sobre NOVOS pedidos em tempo real
   useEffect(() => {
     if (screen !== 'admin') return;
 
-    // Captura IDs ja conhecidos para NAO notificar pedidos existentes ao abrir o app
     const existingIds = new Set(orders.map((o) => o.id));
 
     const channel = subscribeToNewOrders((newOrder) => {
-      if (existingIds.has(newOrder.id)) return; // ja existia, ignorar
+      if (existingIds.has(newOrder.id)) return;
       existingIds.add(newOrder.id);
 
       setOrders((prev) => {
@@ -2981,16 +3025,19 @@ export default function App() {
     return () => { channel.unsubscribe(); };
   }, [screen, adminNotifEnabled]);
 
-  // Supabase Realtime -- notifica CLIENTE sobre status do SEU pedido
+  // Supabase Realtime — atualiza status do pedido do CLIENTE em tempo real
+  // Funciona mesmo sem notificações ativas — o tracker de status na tela também precisa atualizar
   useEffect(() => {
     if (!lastOrder || screen === 'admin') return;
-    if (!clientNotifEnabled) return;
 
     const channel = subscribeToOrderStatus(lastOrder.id, (status) => {
-      if (status === 'saiu') {
-        handleNotify('Pedido a caminho!', 'Seu pedido saiu para entrega! Fique de olho.');
-      } else if (status === 'chegou') {
-        handleNotify('Motoboy na porta!', 'Seu pedido chegou! O entregador esta na porta.');
+      setCurrentOrderStatus(status as OrderStatus);
+      if (clientNotifEnabled) {
+        if (status === 'saiu') {
+          handleNotify('Pedido a caminho!', 'Seu pedido saiu para entrega! Fique de olho.');
+        } else if (status === 'chegou') {
+          handleNotify('Motoboy na porta!', 'Seu pedido chegou! O entregador esta na porta.');
+        }
       }
     });
 
