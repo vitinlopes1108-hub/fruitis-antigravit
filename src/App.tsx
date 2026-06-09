@@ -3053,12 +3053,15 @@ export default function App() {
   }, [screen, adminNotifEnabled]);
 
   // Supabase Realtime — atualiza status do pedido do CLIENTE em tempo real
-  // Funciona mesmo sem notificações ativas — o tracker de status na tela também precisa atualizar
   useEffect(() => {
     if (!lastOrder || screen === 'admin') return;
 
     const channel = subscribeToOrderStatus(lastOrder.id, (status) => {
-      setCurrentOrderStatus(status as OrderStatus);
+      // Atualiza o status na lista de pedidos local
+      setOrders((prev) => prev.map((o) =>
+        o.id === lastOrder.id ? { ...o, status: status as OrderStatus } : o
+      ));
+
       if (clientNotifEnabled) {
         if (status === 'saiu') {
           handleNotify('Pedido a caminho!', 'Seu pedido saiu para entrega! Fique de olho.');

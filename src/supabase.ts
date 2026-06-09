@@ -4,23 +4,9 @@ import { Product, Order, CartItem } from './types';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
-// Custom fetch que força cache: 'no-store' em TODAS as requisições Supabase
-// Isso impede que o service worker da PWA ou o cache do browser sirvam dados velhos
-const noStoreFetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-  return fetch(input, {
-    ...init,
-    cache: 'no-store',
-    headers: {
-      ...((init?.headers as Record<string, string>) ?? {}),
-      'Cache-Control': 'no-store, no-cache, must-revalidate',
-      'Pragma': 'no-cache',
-    },
-  });
-};
-
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  global: { fetch: noStoreFetch },
-});
+// Cliente Supabase simples e estável
+// O cache é controlado pelo workbox (NetworkOnly) e pelo polling no App.tsx
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 
 // ── PRODUCTS ─────────────────────────────────────────────────────────────────
