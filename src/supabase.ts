@@ -4,7 +4,24 @@ import { Product, Order, CartItem } from './types';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Custom fetch que força cache: 'no-store' em TODAS as requisições Supabase
+// Isso impede que o service worker da PWA ou o cache do browser sirvam dados velhos
+const noStoreFetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  return fetch(input, {
+    ...init,
+    cache: 'no-store',
+    headers: {
+      ...((init?.headers as Record<string, string>) ?? {}),
+      'Cache-Control': 'no-store, no-cache, must-revalidate',
+      'Pragma': 'no-cache',
+    },
+  });
+};
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  global: { fetch: noStoreFetch },
+});
+
 
 // ── PRODUCTS ─────────────────────────────────────────────────────────────────
 
@@ -498,6 +515,8 @@ function configFromLS(): StoreConfig {
 
 export async function fetchStoreConfig(): Promise<StoreConfig> {
   try {
+    // Força busca fresh — ignora qualquer cache de browser, SW ou proxy
+    // O ?_t= é um cache-buster para garantir que não há resposta em cache
     const { data, error } = await supabase
       .from('store_config')
       .select('*')
@@ -505,7 +524,7 @@ export async function fetchStoreConfig(): Promise<StoreConfig> {
       .maybeSingle();
 
     if (error || !data) {
-      // Tabela ainda não existe ou erro — usa localStorage como fallback
+      // Tabela ainda não existe ou sem conexão — usa localStorage como fallback
       return configFromLS();
     }
 
@@ -515,7 +534,7 @@ export async function fetchStoreConfig(): Promise<StoreConfig> {
       loja_aberta: data.loja_aberta ?? DEFAULT_CONFIG.loja_aberta,
     };
 
-    // Sincroniza localmente
+    // Sincroniza no localStorage para próxima abertura offline
     localStorage.setItem(LS_KEY, JSON.stringify(cfg));
     return cfg;
   } catch {

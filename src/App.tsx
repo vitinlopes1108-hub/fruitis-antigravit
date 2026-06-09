@@ -2851,20 +2851,47 @@ export default function App() {
     return () => clearInterval(timer);
   }, [storeConfig]);
 
-  // Carrega config da loja no mount + assina Realtime para updates instantâneos
-  // (quando admin muda horário, TODOS os devices recebem em <1s via WebSocket)
+  // ── Sincronização do Horário de Funcionamento ─────────────────────────────
+  // Usa POLLING a cada 8s como mecanismo principal (funciona em QUALQUER browser/PWA,
+  // sem depender de Realtime do Supabase estar configurado na tabela store_config).
+  // O Realtime é mantido como bônus para updates ainda mais rápidos quando disponível.
   useEffect(() => {
+    // Carrega imediatamente no mount
     fetchStoreConfig().then((cfg) => {
       setStoreConfig(cfg);
       setIsStoreOpen(checkIsStoreOpen(cfg));
     });
 
+    // Polling a cada 8s — garante sync entre Safari, Chrome, PWA, qualquer device
+    // Quando admin salva novo horário, em até 8s todos os outros devices recebem
+    const pollInterval = setInterval(() => {
+      fetchStoreConfig().then((cfg) => {
+        setStoreConfig((prev) => {
+          // Só atualiza state se algo mudou (evita re-render desnecessário)
+          if (
+            prev.abertura !== cfg.abertura ||
+            prev.fechamento !== cfg.fechamento ||
+            prev.loja_aberta !== cfg.loja_aberta
+          ) {
+            setIsStoreOpen(checkIsStoreOpen(cfg));
+            return cfg;
+          }
+          return prev;
+        });
+      });
+    }, 8000);
+
+    // Realtime como bônus — updates instantâneos quando disponível
+    // (requer tabela store_config com Realtime ativado no painel Supabase)
     const channel = subscribeToStoreConfig((cfg) => {
       setStoreConfig(cfg);
       setIsStoreOpen(checkIsStoreOpen(cfg));
     });
 
-    return () => { channel.unsubscribe(); };
+    return () => {
+      clearInterval(pollInterval);
+      channel.unsubscribe();
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
