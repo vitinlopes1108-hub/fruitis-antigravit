@@ -6,29 +6,24 @@
   --font-sans: "Nunito", ui-sans-serif, system-ui, sans-serif;
 }
 
-/* ── PWA Anti-Zoom Fixes ───────────────────────────────────────── */
+/* ── PWA / Mobile Anti-Zoom ─────────────────────────────────────── */
 html {
-  /* Prevents text resize on orientation change */
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
 }
 
 * {
-  /* Prevents double-tap zoom on all elements */
   touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  box-sizing: border-box;
 }
 
-/* Prevents iOS from zooming in on input focus (font must be >= 16px) */
+/* Prevents iOS from zooming on input focus (must be >= 16px) */
 input, select, textarea {
   font-size: 16px !important;
 }
 
-/* Remove tap highlight flash on mobile */
-* {
-  -webkit-tap-highlight-color: transparent;
-}
-
-/* ── Safe Area (Notch / Dynamic Island / Punch-hole) ───────────── */
+/* ── Safe Area (Notch / Dynamic Island / Home Indicator) ────────── */
 :root {
   --sat: env(safe-area-inset-top, 0px);
   --sab: env(safe-area-inset-bottom, 0px);
@@ -36,37 +31,46 @@ input, select, textarea {
   --sar: env(safe-area-inset-right, 0px);
 }
 
-/* Garante que o app ocupa toda a tela em PWA instalado */
-html, body, #root {
+/* ── CORE LAYOUT: Full-screen PWA without scroll ────────────────── *
+ * KEY FIX: 100dvh (Dynamic Viewport Height) correctly accounts for  *
+ * the mobile browser URL bar. 100vh includes it, causing content    *
+ * to be hidden behind the browser chrome and unreachable by scroll. *
+ * In PWA mode (installed), dvh == vh but safe-area handling differs.*
+ * overflow: hidden on body prevents page-level scroll entirely —    *
+ * only designated inner containers (.flex-1.overflow-y-auto) scroll.*
+ * ─────────────────────────────────────────────────────────────────*/
+html, body {
   height: 100%;
+  /* Fallback for browsers without dvh support */
   height: -webkit-fill-available;
+  overflow: hidden;
   overscroll-behavior: none;
+  position: fixed;
+  width: 100%;
 }
 
-/* ── Custom scrollbar ──────────────────────────────────────────── */
-::-webkit-scrollbar {
-  width: 4px;
+#root {
+  height: 100%;
+  /* dvh = the viewport MINUS the browser chrome (URL bar, etc.) */
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
-::-webkit-scrollbar-track {
-  background: transparent;
-}
+
+/* ── Custom scrollbar ───────────────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
   background: rgba(197, 66, 245, 0.3);
   border-radius: 4px;
 }
 
+/* ── Animations ─────────────────────────────────────────────────── */
 @keyframes pulse-slow {
-  0%, 100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.5;
-    transform: scale(0.96);
-  }
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.5; transform: scale(0.96); }
 }
-
 .animate-pulse-slow {
   animation: pulse-slow 2s infinite ease-in-out;
 }
-

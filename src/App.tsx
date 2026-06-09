@@ -1550,6 +1550,192 @@ export function RankingView({ darkMode, customer, onBack }: RankingViewProps) {
   );
 }
 
+// ── STOCK PRODUCT CARD ────────────────────────────────────────────────────────
+interface StockProductCardProps {
+  product: Product;
+  darkMode: boolean;
+  onToggleFlavor: (productId: number, flavorId: number) => void;
+  onSetStock: (productId: number, flavorId: number, stock: number | null) => void;
+  onSave: (product: Product) => Promise<void>;
+}
+
+function StockProductCard({ product, darkMode, onToggleFlavor, onSetStock, onSave }: StockProductCardProps) {
+  const [saving, setSaving] = useState(false);
+  const [dirty, setDirty] = useState(false);
+
+  const handleToggle = (flavorId: number) => {
+    onToggleFlavor(product.id, flavorId);
+    setDirty(true);
+  };
+
+  const handleStock = (flavorId: number, val: string) => {
+    const n = val === '' ? null : parseInt(val, 10);
+    if (n !== null && isNaN(n)) return;
+    onSetStock(product.id, flavorId, n);
+    setDirty(true);
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    await onSave(product);
+    setSaving(false);
+    setDirty(false);
+  };
+
+  return (
+    <div className={`p-4 rounded-2xl border ${darkMode ? 'bg-white/5 border-purple-500/10' : 'bg-white border-purple-950/10 shadow-sm'}`}>
+      <div className="flex items-center justify-between mb-3">
+        <div>
+          <h4 className="font-brand text-base">{product.name}</h4>
+          {product.badge && <span className="text-[9px] font-black uppercase tracking-wider text-purple-400 bg-purple-500/10 px-2 py-0.5 rounded-full">{product.badge}</span>}
+        </div>
+        <button
+          onClick={handleSave}
+          disabled={saving || !dirty}
+          className={`text-xs font-bold py-1.5 px-3.5 rounded-xl transition-all ${
+            dirty
+              ? 'bg-purple-500 text-white active:scale-95'
+              : 'bg-white/5 text-white/30 cursor-not-allowed'
+          }`}
+        >
+          {saving ? '...' : dirty ? '💾 Salvar' : 'Salvo ✓'}
+        </button>
+      </div>
+
+      <div className="space-y-2">
+        {product.flavors.map((flavor) => {
+          const isActive = flavor.active !== false;
+          const stockVal = flavor.stock ?? '';
+          const isOut = flavor.stock === 0;
+          const isLow = flavor.stock !== null && flavor.stock !== undefined && flavor.stock > 0 && flavor.stock <= 3;
+
+          return (
+            <div key={flavor.id} className={`flex items-center gap-2 p-2.5 rounded-xl border transition-all ${
+              !isActive
+                ? darkMode ? 'bg-black/20 border-white/5 opacity-50' : 'bg-gray-50 border-gray-200 opacity-50'
+                : darkMode ? 'bg-white/3 border-white/5' : 'bg-purple-50/30 border-purple-100'
+            }`}>
+              {/* Active toggle */}
+              <button
+                onClick={() => handleToggle(flavor.id)}
+                className={`w-8 h-8 rounded-lg flex-shrink-0 flex items-center justify-center text-base transition-all active:scale-90 ${
+                  isActive
+                    ? 'bg-emerald-500/20 border border-emerald-500/30'
+                    : 'bg-red-500/10 border border-red-500/20'
+                }`}
+                title={isActive ? 'Desativar sabor' : 'Ativar sabor'}
+              >
+                {flavor.emoji}
+              </button>
+
+              {/* Name + status */}
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-bold truncate">{flavor.name}</p>
+                <p className={`text-[10px] font-bold ${
+                  !isActive ? 'text-red-400' : isOut ? 'text-red-400' : isLow ? 'text-amber-400' : 'text-emerald-400'
+                }`}>
+                  {!isActive ? 'Inativo' : isOut ? 'Esgotado' : isLow ? `⚠️ Baixo (${flavor.stock})` : 'Disponível'}
+                </p>
+              </div>
+
+              {/* Stock input */}
+              <div className="flex items-center gap-1 flex-shrink-0">
+                <button
+                  onClick={() => handleStock(flavor.id, String(Math.max(0, (flavor.stock ?? 0) - 1)))}
+                  className="w-7 h-7 rounded-lg bg-black/10 flex items-center justify-center text-purple-400 active:scale-90 transition-all border border-white/5"
+                >
+                  <Minus size={12} />
+                </button>
+                <input
+                  type="number"
+                  min={0}
+                  value={stockVal}
+                  onChange={(e) => handleStock(flavor.id, e.target.value)}
+                  placeholder="∞"
+                  className={`w-12 text-center rounded-lg border outline-none font-bold text-xs py-1 ${
+                    darkMode ? 'bg-white/5 border-white/10 text-white' : 'bg-white border-purple-200 text-[#1a0030]'
+                  }`}
+                />
+                <button
+                  onClick={() => handleStock(flavor.id, String((flavor.stock ?? 0) + 1))}
+                  className="w-7 h-7 rounded-lg bg-purple-500/15 flex items-center justify-center text-purple-400 active:scale-90 transition-all border border-purple-500/10"
+                >
+                  <Plus size={12} />
+                </button>
+              </div>
+
+              {/* Active/inactive label */}
+              <button
+                onClick={() => handleToggle(flavor.id)}
+                className={`text-[9px] font-black px-2 py-1 rounded-full border flex-shrink-0 transition-all ${
+                  isActive
+                    ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400'
+                    : 'bg-red-500/10 border-red-500/20 text-red-400'
+                }`}
+              >
+                {isActive ? 'ON' : 'OFF'}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── STOCK HISTORY PANEL ───────────────────────────────────────────────────────
+function StockHistoryPanel({ darkMode }: { darkMode: boolean }) {
+  const [logs, setLogs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchStockLog().then((data) => {
+      setLogs(data ?? []);
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  }, []);
+
+  if (loading) return (
+    <div className="flex justify-center py-8">
+      <div className="w-6 h-6 rounded-full border-2 border-purple-500 border-t-transparent animate-spin" />
+    </div>
+  );
+
+  if (logs.length === 0) return (
+    <div className={`p-4 rounded-2xl border text-center ${darkMode ? 'bg-white/5 border-purple-500/10' : 'bg-white border-purple-950/10 shadow-sm'}`}>
+      <p className="text-sm opacity-50">Nenhuma movimentação de estoque registrada.</p>
+    </div>
+  );
+
+  return (
+    <div className={`p-4 rounded-2xl border ${darkMode ? 'bg-white/5 border-purple-500/10' : 'bg-white border-purple-950/10 shadow-sm'}`}>
+      <p className="text-[11px] font-black uppercase text-purple-400 tracking-wider mb-3">📋 Histórico de Estoque</p>
+      <div className="space-y-2">
+        {logs.slice(0, 20).map((log, i) => {
+          const delta = (log.new_stock ?? 0) - (log.old_stock ?? 0);
+          const isPositive = delta > 0;
+          return (
+            <div key={i} className={`flex items-center justify-between text-xs py-2 border-b last:border-0 ${darkMode ? 'border-white/5' : 'border-purple-50'}`}>
+              <div className="flex-1 min-w-0">
+                <p className="font-bold truncate">{log.flavor_name}</p>
+                <p className={`text-[10px] truncate ${darkMode ? 'text-white/40' : 'text-[#1a0030]/40'}`}>{log.product_name}</p>
+              </div>
+              <div className="text-right flex-shrink-0 ml-2">
+                <p className={`font-black ${isPositive ? 'text-emerald-400' : 'text-red-400'}`}>
+                  {isPositive ? '+' : ''}{delta}
+                </p>
+                <p className={`text-[10px] ${darkMode ? 'text-white/35' : 'text-[#1a0030]/35'}`}>
+                  {log.old_stock ?? '?'} → {log.new_stock ?? '?'}
+                </p>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ── ADMIN DASHBOARD COMPONENT ──────────────────────────────────────────────────
 interface AdminDashboardProps {
   darkMode: boolean;
@@ -3029,7 +3215,7 @@ export default function App() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="flex-1 flex flex-col h-screen overflow-hidden"
+            className="flex-1 flex flex-col overflow-hidden"
           >
             {/* ── TOP HEADER ── */}
             <div
@@ -3039,6 +3225,18 @@ export default function App() {
               style={{ paddingTop: 'calc(0.75rem + env(safe-area-inset-top, 0px))' }}
             >
               <Logo size={32} />
+              {/* Horário de funcionamento pill — visível para clientes */}
+              <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-black ${
+                isStoreOpen
+                  ? darkMode ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-400' : 'bg-emerald-50 border-emerald-300 text-emerald-700'
+                  : darkMode ? 'bg-red-500/10 border-red-500/25 text-red-400' : 'bg-red-50 border-red-300 text-red-600'
+              }`}>
+                <div className={`w-1.5 h-1.5 rounded-full ${ isStoreOpen ? 'bg-emerald-400 animate-pulse' : 'bg-red-400'}`} />
+                {isStoreOpen ? 'Aberto' : 'Fechado'}
+                <span className={`${darkMode ? 'text-white/40' : 'text-black/30'} font-normal`}>
+                  {storeConfig.abertura}–{storeConfig.fechamento}
+                </span>
+              </div>
               <button 
                 onClick={() => setDarkMode(!darkMode)}
                 className={`p-2.5 rounded-xl transition-all border ${
@@ -3154,7 +3352,7 @@ export default function App() {
             initial={{ opacity: 0, x: 30 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -30 }}
-            className="flex-1 flex flex-col h-screen overflow-hidden"
+            className="flex-1 flex flex-col overflow-hidden"
           >
             <CartView 
               darkMode={darkMode}
@@ -3217,7 +3415,7 @@ export default function App() {
             initial={{ opacity: 0, x: 30 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -30 }}
-            className="flex-1 flex flex-col h-screen overflow-hidden"
+            className="flex-1 flex flex-col overflow-hidden"
           >
             <CustomerHistory
               darkMode={darkMode}
@@ -3237,7 +3435,7 @@ export default function App() {
             initial={{ opacity: 0, x: 30 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -30 }}
-            className="flex-1 flex flex-col h-screen overflow-hidden"
+            className="flex-1 flex flex-col overflow-hidden"
           >
             <RankingView
               darkMode={darkMode}
@@ -3254,7 +3452,7 @@ export default function App() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="flex-1 flex flex-col h-screen overflow-hidden"
+            className="flex-1 flex flex-col overflow-hidden"
           >
             <div className={`p-4 border-b flex justify-between items-center z-10 ${darkMode ? 'bg-[#0c0118]/95 border-purple-500/10' : 'bg-white/95 border-[#1a0030]/10'} backdrop-blur-md`}>
               <Logo size={28} />
@@ -3500,10 +3698,11 @@ export default function App() {
     );
   }
 
-  // Pure Mobile Layout (Real smart-phones or bypass tablet screens)
+  // Pure Mobile Layout — h-full inherits 100dvh from #root in CSS
+  // This is the PWA fix: no more hidden content behind browser chrome
   return (
-    <div className={`min-h-screen transition-colors duration-300 ${darkMode ? 'bg-[#0c0118] text-white' : 'bg-[#f3f0f7] text-[#1a0030]'}`}>
-      <div className="max-w-md mx-auto min-h-screen flex flex-col shadow-2xl relative bg-opacity-95 overflow-hidden">
+    <div className={`h-full flex flex-col transition-colors duration-300 ${darkMode ? 'bg-[#0c0118] text-white' : 'bg-[#f3f0f7] text-[#1a0030]'}`}>
+      <div className="max-w-md mx-auto w-full flex-1 flex flex-col shadow-2xl relative overflow-hidden">
         {renderAppCore()}
       </div>
     </div>
