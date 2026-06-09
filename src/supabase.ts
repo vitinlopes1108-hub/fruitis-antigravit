@@ -370,15 +370,17 @@ export function calcRanking(totalCompras: number, recompensaDisponivel: boolean)
 
 export async function fetchCustomerRanking(phone: string): Promise<CustomerRanking | null> {
   try {
+    // Normaliza o telefone para sempre buscar sem formatação
+    const phoneClean = phone.replace(/\D/g, '');
+
     const { data, error } = await supabase
       .from('customer_ranking')
       .select('*')
-      .eq('telefone', phone)
+      .eq('telefone', phoneClean)
       .maybeSingle();
 
     if (error) {
       if ((error as any).code === 'PGRST205' || (error as any).code === '42P01') {
-        // Tabela não existe ainda — retorna null silenciosamente
         return null;
       }
       console.error('Erro ao buscar ranking:', error);
@@ -396,8 +398,12 @@ export async function fetchCustomerRanking(phone: string): Promise<CustomerRanki
  */
 export async function incrementCustomerRanking(phone: string, nome: string): Promise<CustomerRanking | null> {
   try {
-    // Busca o registro atual
-    const current = await fetchCustomerRanking(phone);
+    // Normaliza o telefone — usa sempre o número limpo (sem formatação)
+    // para evitar mismatch entre "(34) 99692-1533" e "34996921533"
+    const phoneClean = phone.replace(/\D/g, '');
+
+    // Busca registro atual pelo telefone limpo
+    const current = await fetchCustomerRanking(phoneClean);
 
     const prevTotal = current?.total_compras ?? 0;
     const newTotal = prevTotal + 1;
@@ -405,13 +411,15 @@ export async function incrementCustomerRanking(phone: string, nome: string): Pro
     const { nivel, comprasNoCiclo, recompensa } = calcRanking(newTotal, false);
 
     const payload: Omit<CustomerRanking, 'id' | 'updated_at'> = {
-      telefone: phone,
+      telefone: phoneClean,
       nome,
       total_compras: newTotal,
       nivel_atual: nivel,
       compras_no_ciclo: comprasNoCiclo,
       recompensa_disponivel: recompensa,
     };
+
+    console.log('[Ranking] Atualizando para telefone:', phoneClean, '| total:', newTotal, '| nivel:', nivel);
 
     const { data, error } = await supabase
       .from('customer_ranking')
@@ -420,12 +428,18 @@ export async function incrementCustomerRanking(phone: string, nome: string): Pro
       .single();
 
     if (error) {
-      if ((error as any).code === 'PGRST205' || (error as any).code === '42P01') return null;
-      console.error('Erro ao atualizar ranking:', error);
+      if ((error as any).code === 'PGRST205' || (error as any).code === '42P01') {
+        console.warn('[Ranking] Tabela customer_ranking não encontrada no Supabase.');
+        return null;
+      }
+      console.error('[Ranking] Erro ao atualizar:', error);
       return null;
     }
+
+    console.log('[Ranking] ✅ Atualizado com sucesso:', data);
     return data as CustomerRanking;
-  } catch {
+  } catch (e) {
+    console.error('[Ranking] Exceção inesperada:', e);
     return null;
   }
 }

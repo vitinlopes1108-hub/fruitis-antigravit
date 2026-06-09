@@ -1712,20 +1712,28 @@ function StockHistoryPanel({ darkMode }: { darkMode: boolean }) {
       <p className="text-[11px] font-black uppercase text-purple-400 tracking-wider mb-3">📋 Histórico de Estoque</p>
       <div className="space-y-2">
         {logs.slice(0, 20).map((log, i) => {
-          const delta = (log.new_stock ?? 0) - (log.old_stock ?? 0);
+          const d = log.details ?? {};
+          const flavorName = d.flavorName ?? d.flavor_name ?? '—';
+          const productName = d.productName ?? d.product_name ?? '—';
+          const before = d.before ?? d.old_stock ?? 0;
+          const after = d.after ?? d.new_stock ?? 0;
+          const delta = after - before;
           const isPositive = delta > 0;
+          const isVenda = log.action === 'stock_venda';
           return (
             <div key={i} className={`flex items-center justify-between text-xs py-2 border-b last:border-0 ${darkMode ? 'border-white/5' : 'border-purple-50'}`}>
               <div className="flex-1 min-w-0">
-                <p className="font-bold truncate">{log.flavor_name}</p>
-                <p className={`text-[10px] truncate ${darkMode ? 'text-white/40' : 'text-[#1a0030]/40'}`}>{log.product_name}</p>
+                <p className="font-bold truncate">{flavorName}</p>
+                <p className={`text-[10px] truncate ${darkMode ? 'text-white/40' : 'text-[#1a0030]/40'}`}>
+                  {productName} · {isVenda ? '🛒 Venda' : '✏️ Ajuste'}
+                </p>
               </div>
               <div className="text-right flex-shrink-0 ml-2">
                 <p className={`font-black ${isPositive ? 'text-emerald-400' : 'text-red-400'}`}>
                   {isPositive ? '+' : ''}{delta}
                 </p>
                 <p className={`text-[10px] ${darkMode ? 'text-white/35' : 'text-[#1a0030]/35'}`}>
-                  {log.old_stock ?? '?'} → {log.new_stock ?? '?'}
+                  {before} → {after}
                 </p>
               </div>
             </div>
@@ -2990,33 +2998,39 @@ export default function App() {
   }, [lastOrder?.id, clientNotifEnabled, screen]);
 
   const updateOrderStatus = async (orderId: number, status: OrderStatus) => {
+    // Captura o status ANTERIOR antes de atualizar qualquer estado
+    const previousStatus = orderStatuses[orderId] || orders.find((o) => o.id === orderId)?.status || 'pendente';
+    const order = orders.find((o) => o.id === orderId);
+
     const nextStatuses = { ...orderStatuses, [orderId]: status };
     setOrderStatuses(nextStatuses);
     localStorage.setItem('fg_orders_status', JSON.stringify(nextStatuses));
 
-    // Envia WhatsApp para o cliente ANTES do await (window.open precisa de gesto do usuario)
-    const order = orders.find((o) => o.id === orderId);
+    // Envia WhatsApp ANTES do await (window.open precisa de gesto do usuario)
     if (order && (status === 'saiu' || status === 'chegou')) {
-      // Limpa o numero e garante prefixo 55 (Brasil)
       const rawPhone = order.phone.replace(/\D/g, '');
       const phone = rawPhone.startsWith('55') ? rawPhone : `55${rawPhone}`;
       const firstName = order.name.split(' ')[0];
-
       const msg = status === 'saiu'
         ? `Ola ${firstName}! Seu pedido da *Frutinhas Geladas* saiu para entrega e ja esta a caminho! Em breve estara na sua porta. `
         : `Seu pedido chegou! O entregador esta na sua porta agora. Aproveite, ${firstName}! `;
-
       window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank');
     }
 
     // Persiste status no Supabase
     await dbUpdateOrderStatus(orderId, status);
 
-    // ✅ Só baixa o estoque quando o ADMIN confirmar a entrega ('chegou')
-    if (status === 'chegou' && order) {
+    // ✅ Ranking e estoque só na PRIMEIRA vez que o pedido chega como 'chegou'
+    // Se o admin mudar o status de volta e depois para 'chegou' de novo, NÃO incrementa de novo
+    const isFirstTimeChegou = status === 'chegou' && previousStatus !== 'chegou';
+
+    if (isFirstTimeChegou && order) {
+      // Decrementa estoque dos itens entregues
       await decrementStock(order.items, products, orderId);
-      // Atualiza ranking do cliente
+
+      // Incrementa ranking/fidelidade do cliente — APENAS na primeira confirmação
       await incrementCustomerRanking(order.phone, order.name);
+
       // Recarrega produtos para refletir o novo estoque em tempo real
       fetchProducts().then((updated) => {
         if (updated.length > 0) setProducts(updated);
