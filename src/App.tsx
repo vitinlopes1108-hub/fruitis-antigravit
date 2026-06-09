@@ -12,8 +12,16 @@ import {
   deleteOrder as dbDeleteOrder,
   decrementStock,
   logAudit,
+  logStockAdjust,
+  fetchStockLog,
   subscribeToNewOrders,
   subscribeToOrderStatus,
+  subscribeToProductChanges,
+  fetchCustomerRanking,
+  incrementCustomerRanking,
+  markRewardUsed,
+  calcRanking,
+  type CustomerRanking,
 } from './supabase';
 import { 
   ShoppingCart, 
@@ -52,6 +60,10 @@ import {
   ToggleLeft,
   ToggleRight,
   ShieldAlert,
+  Trophy,
+  Star,
+  Gift,
+  Zap,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 // @ts-ignore
@@ -469,7 +481,7 @@ export function CatalogView({ darkMode, customer, products, cart, setCart, onOpe
       
       {/* Banner / User Greetings */}
       <div className="p-4 flex-shrink-0">
-        <div className={`p-4 rounded-2xl relative overflow-hidden flex flex-col justify-center min-h-[100px] border ${
+        <div className={`p-4 rounded-2xl relative overflow-hidden flex flex-col justify-center min-h-[90px] border ${
           darkMode 
             ? 'bg-gradient-to-br from-purple-950/20 to-purple-900/10 border-purple-500/10' 
             : 'bg-gradient-to-br from-purple-100/50 to-purple-50/20 border-purple-800/10'
@@ -482,7 +494,7 @@ export function CatalogView({ darkMode, customer, products, cart, setCart, onOpe
             Fala, <span className="text-purple-500">{customer.name.split(' ')[0]}</span>! 🍓
           </h2>
           <p className={`text-[11px] mt-1 ${darkMode ? 'text-white/60' : 'text-[#1a0030]/65'}`}>
-            Selecione o modelo desejado e explore as opções de sabor disponíveis:
+            Selecione o modelo e explore as opções de sabor:
           </p>
         </div>
       </div>
@@ -494,7 +506,7 @@ export function CatalogView({ darkMode, customer, products, cart, setCart, onOpe
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="🔎 Buscar modelo ou sabor..."
-          className={`w-full p-2.5 px-4 rounded-xl outline-none text-sm transition-all border ${
+          className={`w-full p-3 px-4 rounded-xl outline-none text-sm transition-all border ${
             darkMode 
               ? 'bg-white/5 border-purple-500/10 text-white focus:border-purple-500/20 shadow-inner' 
               : 'bg-purple-100/10 border-purple-950/10 text-[#1a0030] focus:border-purple-500'
@@ -503,7 +515,7 @@ export function CatalogView({ darkMode, customer, products, cart, setCart, onOpe
       </div>
 
       {/* Scrollable Catalogs */}
-      <div className="flex-1 overflow-y-auto px-4 pb-24 space-y-4">
+      <div className="flex-1 overflow-y-auto px-4 pb-6 space-y-4">
         {filterProducts.length === 0 ? (
           <div className="text-center py-20 opacity-50">
             <Compass size={40} className="mx-auto mb-2 text-purple-400 animate-pulse" />
@@ -535,30 +547,48 @@ export function CatalogView({ darkMode, customer, products, cart, setCart, onOpe
 
                 <div className="text-xs font-black uppercase text-purple-400 tracking-wider mb-2.5 text-left">Escolha o Sabor:</div>
                 
-                {/* Flavors Grid */}
-                <div className="grid grid-cols-2 gap-2">
+                {/* Flavors Grid — bigger tap targets */}
+                <div className="grid grid-cols-2 gap-2.5">
                   {p.flavors.map((flavor) => {
                     const isSelected = selectedProduct?.id === p.id && selectedFlavor?.id === flavor.id;
+                    const outOfStock = flavor.stock !== null && flavor.stock === 0;
+                    const lowStock   = flavor.stock !== null && flavor.stock > 0 && flavor.stock <= 3;
                     return (
                       <button
                         key={flavor.id}
                         type="button"
+                        disabled={outOfStock}
                         onClick={() => {
+                          if (outOfStock) return;
                           setSelectedProduct(p);
                           setSelectedFlavor(flavor);
                           setQuantity(1);
                         }}
-                        className={`p-3 rounded-xl border flex flex-col justify-between transition-all ${
-                          isSelected 
-                            ? `bg-purple-500/20 border-purple-500 text-white shadow-md` 
-                            : darkMode ? 'bg-white/5 border-white/5 hover:bg-white/10' : 'bg-purple-50/15 border-purple-900/10 hover:bg-purple-50/30'
+                        className={`p-3 min-h-[80px] rounded-xl border flex flex-col justify-between transition-all relative overflow-hidden active:scale-95 ${
+                          outOfStock
+                            ? 'opacity-50 cursor-not-allowed ' + (darkMode ? 'bg-white/3 border-white/5' : 'bg-gray-50 border-gray-200')
+                            : isSelected 
+                              ? 'bg-purple-500/20 border-purple-500 text-white shadow-md shadow-purple-500/20' 
+                              : darkMode ? 'bg-white/5 border-white/5 hover:bg-white/10' : 'bg-purple-50/15 border-purple-900/10 hover:bg-purple-50/30'
                         }`}
                       >
+                        {outOfStock && (
+                          <div className="absolute top-1.5 right-1.5 text-[8px] font-black bg-red-500/90 text-white px-1.5 py-0.5 rounded-full">
+                            ESGOTADO
+                          </div>
+                        )}
+                        {lowStock && !outOfStock && (
+                          <div className="absolute top-1.5 right-1.5 text-[8px] font-black bg-amber-500/90 text-white px-1.5 py-0.5 rounded-full">
+                            ⚠️ {flavor.stock} un.
+                          </div>
+                        )}
                         <div className="flex items-center gap-2 mb-2 select-none">
-                          <span className="text-xl" style={{ textShadow: '0 2px 8px rgba(0,0,0,0.2)' }}>{flavor.emoji}</span>
-                          <span className="text-[11px] font-bold leading-normal text-left">{flavor.name}</span>
+                          <span className="text-2xl" style={{ textShadow: '0 2px 8px rgba(0,0,0,0.2)' }}>{flavor.emoji}</span>
+                          <span className="text-xs font-bold leading-snug text-left">{flavor.name}</span>
                         </div>
-                        <div className="text-xs font-black text-purple-400 text-left">{flavor.price.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
+                        <div className={`text-xs font-black text-left ${ outOfStock ? 'text-gray-400' : 'text-purple-400'}`}>
+                          {outOfStock ? 'Indisponível' : flavor.price.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                        </div>
                       </button>
                     );
                   })}
@@ -566,41 +596,41 @@ export function CatalogView({ darkMode, customer, products, cart, setCart, onOpe
 
                 {/* Inline Quantity & Cart Action if Selected */}
                 {selectedProduct?.id === p.id && selectedFlavor && (
-                  <div className={`mt-3 p-3 rounded-xl border flex flex-col space-y-3 ${
+                  <div className={`mt-3 p-4 rounded-xl border flex flex-col space-y-3 ${
                     darkMode ? 'bg-purple-950/20 border-purple-500/20' : 'bg-purple-50/50 border-purple-500/10'
                   }`}>
-                    <div className="flex justify-between items-center text-sm">
-                      <span className="font-bold flex items-center gap-1 text-xs">
+                    <div className="flex justify-between items-center">
+                      <span className="font-bold flex items-center gap-1.5 text-sm">
                         {selectedFlavor.emoji} {selectedFlavor.name} 
                       </span>
-                      <span className="font-black text-purple-500 text-sm">
+                      <span className="font-black text-purple-500 text-base">
                         {fmt(selectedFlavor.price * quantity)}
                       </span>
                     </div>
 
                     <div className="flex items-center gap-3">
-                      {/* Quantity Controls */}
+                      {/* Quantity Controls — large touch targets */}
                       <div className="flex items-center gap-2">
                         <button 
                           onClick={() => setQuantity(prev => Math.max(1, prev - 1))}
-                          className="w-8 h-8 rounded-lg bg-black/10 hover:bg-black/20 flex items-center justify-center font-bold text-lg active:scale-95 transition-all text-purple-500"
+                          className="w-10 h-10 rounded-xl bg-black/10 hover:bg-black/20 flex items-center justify-center active:scale-90 transition-all text-purple-500 border border-purple-500/10"
                         >
-                          <Minus size={14} strokeWidth={2.5} />
+                          <Minus size={16} strokeWidth={2.5} />
                         </button>
-                        <span className="w-8 text-center text-sm font-black">{quantity}</span>
+                        <span className="w-8 text-center text-base font-black">{quantity}</span>
                         <button 
                           onClick={() => setQuantity(prev => prev + 1)}
-                          className="w-8 h-8 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 flex items-center justify-center font-bold text-lg active:scale-95 transition-all text-purple-500"
+                          className="w-10 h-10 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 flex items-center justify-center active:scale-90 transition-all text-purple-500 border border-purple-500/10"
                         >
-                          <Plus size={14} strokeWidth={2.5} />
+                          <Plus size={16} strokeWidth={2.5} />
                         </button>
                       </div>
 
                       <button
                         onClick={() => handleAddToCart(p, selectedFlavor)}
-                        className="flex-1 py-1.5 rounded-lg text-white font-bold text-xs bg-gradient-to-r from-purple-700 to-purple-500 shadow-md shadow-purple-500/10"
+                        className="flex-1 py-2.5 rounded-xl text-white font-bold text-sm bg-gradient-to-r from-purple-700 to-purple-500 shadow-md shadow-purple-500/20 active:scale-95 transition-all"
                       >
-                        Adicionar ao Carrinho
+                        + Adicionar ao Carrinho
                       </button>
                     </div>
                   </div>
@@ -610,24 +640,6 @@ export function CatalogView({ darkMode, customer, products, cart, setCart, onOpe
           })
         )}
       </div>
-
-      {/* Floating Cart Indicator */}
-      {totalItems > 0 && (
-        <div className={`absolute bottom-4 left-4 right-4 p-3 rounded-2xl shadow-xl border flex items-center justify-between pointer-events-auto transition-all z-20 ${
-          darkMode ? 'bg-[#0c0118]/90 border-purple-500/20 backdrop-blur-md' : 'bg-white/95 border-[#1a0030]/10 backdrop-blur-md'
-        }`}>
-          <div className="text-left">
-            <p className="text-[10px] uppercase font-bold text-purple-400 tracking-wider">Subtotal ({totalItems} {totalItems === 1 ? 'item' : 'itens'})</p>
-            <p className="font-brand text-lg tracking-wide mt-0.5">{fmt(cartTotal)}</p>
-          </div>
-          <button 
-            onClick={onOpenCart}
-            className="flex items-center gap-2 py-2.5 px-5 rounded-xl text-white font-bold text-sm bg-gradient-to-r from-purple-700 to-purple-500 hover:from-purple-600 hover:to-purple-400 shadow-md active:scale-98 transition-all"
-          >
-            Ver Carrinho <ShoppingCart size={15} />
-          </button>
-        </div>
-      )}
     </div>
   );
 }
@@ -1242,6 +1254,270 @@ export function CustomerHistory({ darkMode, customer, onBack, onRepeatOrder }: C
                 </motion.div>
               );
             })}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── RANKING VIEW COMPONENT ────────────────────────────────────────────────────
+interface RankingViewProps {
+  darkMode: boolean;
+  customer: Customer;
+  onBack: () => void;
+}
+
+export function RankingView({ darkMode, customer, onBack }: RankingViewProps) {
+  const [ranking, setRanking] = useState<CustomerRanking | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [rewardClaiming, setRewardClaiming] = useState(false);
+  const [rewardClaimed, setRewardClaimed] = useState(false);
+  const [levelUpAnim, setLevelUpAnim] = useState(false);
+
+  useEffect(() => {
+    setLoading(true);
+    fetchCustomerRanking(customer.phone).then((data) => {
+      setRanking(data);
+      setLoading(false);
+    });
+  }, [customer.phone]);
+
+  const nivel = ranking?.nivel_atual ?? 0;
+  const comprasNoCiclo = ranking?.compras_no_ciclo ?? 0;
+  const totalCompras = ranking?.total_compras ?? 0;
+  const recompensaDisponivel = ranking?.recompensa_disponivel ?? false;
+  const faltam = nivel < 5 ? 5 - comprasNoCiclo : 0;
+  const progresso = nivel === 0 ? 0 : (comprasNoCiclo / 5) * 100;
+
+  const LEVEL_ICONS = ['🌱', '🥉', '🥈', '🥇', '💎', '🏆'];
+  const LEVEL_NAMES = ['Iniciante', 'Bronze', 'Prata', 'Ouro', 'Diamante', 'Campeão'];
+  const LEVEL_COLORS = [
+    'from-zinc-600 to-zinc-500',
+    'from-amber-700 to-amber-500',
+    'from-slate-500 to-slate-400',
+    'from-yellow-600 to-yellow-400',
+    'from-cyan-600 to-cyan-400',
+    'from-purple-700 to-purple-400',
+  ];
+  const LEVEL_GLOW = [
+    'shadow-zinc-500/20',
+    'shadow-amber-500/30',
+    'shadow-slate-400/30',
+    'shadow-yellow-400/40',
+    'shadow-cyan-400/40',
+    'shadow-purple-500/40',
+  ];
+
+  const handleClaimReward = async () => {
+    setRewardClaiming(true);
+    await markRewardUsed(customer.phone);
+    setRewardClaimed(true);
+    setRanking(prev => prev ? { ...prev, recompensa_disponivel: false } : prev);
+    setRewardClaiming(false);
+  };
+
+  return (
+    <div className="flex-1 flex flex-col h-full overflow-hidden">
+      {/* Header */}
+      <div className={`p-4 border-b flex items-center gap-3 flex-shrink-0 ${
+        darkMode ? 'bg-[#0c0118]/95 border-purple-500/10' : 'bg-white/95 border-[#1a0030]/10'
+      } backdrop-blur-md`}>
+        <button onClick={onBack} className="p-2 text-purple-400 hover:text-purple-300 transition-colors">
+          <span className="text-xl">←</span>
+        </button>
+        <div className="flex-1">
+          <h2 className="font-brand text-lg tracking-wide text-amber-400">🏆 Programa de Fidelidade</h2>
+          <p className={`text-[11px] ${darkMode ? 'text-white/50' : 'text-[#1a0030]/50'}`}>{customer.name}</p>
+        </div>
+        <div className={`p-2 rounded-xl border ${darkMode ? 'bg-amber-500/10 border-amber-500/20' : 'bg-amber-50 border-amber-300'}`}>
+          <Trophy size={16} className="text-amber-400" />
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto p-4 pb-10 space-y-4">
+        {loading ? (
+          <div className="flex flex-col items-center justify-center py-24 gap-4">
+            <div className="w-10 h-10 border-3 border-amber-400 border-t-transparent rounded-full animate-spin" />
+            <p className="text-sm text-amber-400 font-semibold animate-pulse">Carregando seu ranking...</p>
+          </div>
+        ) : (
+          <>
+            {/* Hero Level Card */}
+            <div className={`relative overflow-hidden rounded-3xl p-6 text-center shadow-2xl ${LEVEL_GLOW[nivel]} bg-gradient-to-br ${LEVEL_COLORS[nivel]}`}>
+              <div className="absolute inset-0 opacity-10 text-[120px] font-black flex items-center justify-center select-none pointer-events-none">
+                {LEVEL_ICONS[nivel]}
+              </div>
+              {/* Level badge */}
+              <div className="relative z-10">
+                <div className="text-6xl mb-3 drop-shadow-xl">{LEVEL_ICONS[nivel]}</div>
+                <div className="inline-flex items-center gap-2 bg-white/20 backdrop-blur-sm px-4 py-1 rounded-full mb-2">
+                  <span className="text-[10px] font-black text-white/90 uppercase tracking-widest">Nível {nivel}</span>
+                </div>
+                <h3 className="font-brand text-3xl text-white font-black drop-shadow">{LEVEL_NAMES[nivel]}</h3>
+                <p className="text-white/75 text-xs mt-1 font-semibold">
+                  {totalCompras === 0
+                    ? 'Faça sua primeira compra para começar!'
+                    : `${totalCompras} compra${totalCompras !== 1 ? 's' : ''} concluída${totalCompras !== 1 ? 's' : ''} no total`}
+                </p>
+              </div>
+            </div>
+
+            {/* Reward Alert */}
+            {recompensaDisponivel && !rewardClaimed && (
+              <motion.div
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                className={`p-4 rounded-2xl border-2 border-amber-400/60 relative overflow-hidden ${
+                  darkMode ? 'bg-amber-500/10' : 'bg-amber-50'
+                }`}
+              >
+                <div className="absolute -right-4 -top-4 text-7xl opacity-10 rotate-12 select-none">🎁</div>
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-full bg-amber-400/20 flex items-center justify-center flex-shrink-0 text-xl">
+                    🎁
+                  </div>
+                  <div className="flex-1 text-left">
+                    <p className="font-black text-amber-400 text-sm">Recompensa Desbloqueada! 🎉</p>
+                    <p className={`text-xs mt-1 leading-relaxed ${darkMode ? 'text-white/70' : 'text-[#1a0030]/70'}`}>
+                      Você atingiu o <strong>Nível 5</strong>! Ganhou <strong>1 produto grátis</strong> à sua escolha, qualquer sabor disponível!
+                    </p>
+                    <button
+                      onClick={handleClaimReward}
+                      disabled={rewardClaiming}
+                      className="mt-3 py-2 px-5 rounded-xl text-xs font-black text-white bg-gradient-to-r from-amber-600 to-amber-400 shadow-lg shadow-amber-500/30 active:scale-95 transition-all disabled:opacity-60"
+                    >
+                      {rewardClaiming ? 'Processando...' : '✨ Resgatar Meu Prêmio'}
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+
+            {rewardClaimed && (
+              <div className={`p-4 rounded-2xl border ${darkMode ? 'bg-emerald-500/10 border-emerald-500/25' : 'bg-emerald-50 border-emerald-300'} text-center`}>
+                <p className="text-2xl mb-1">✅</p>
+                <p className="font-black text-emerald-400 text-sm">Recompensa resgatada!</p>
+                <p className={`text-xs mt-1 ${darkMode ? 'text-white/60' : 'text-[#1a0030]/60'}`}>Entre em contato via WhatsApp para receber seu prêmio.</p>
+              </div>
+            )}
+
+            {/* Progress Bar Section */}
+            {nivel < 5 && (
+              <div className={`p-4 rounded-2xl border ${darkMode ? 'bg-white/5 border-purple-500/10' : 'bg-white border-purple-950/10 shadow-sm'}`}>
+                <div className="flex justify-between items-center mb-3">
+                  <p className={`text-[11px] font-black uppercase tracking-wider ${darkMode ? 'text-white/60' : 'text-[#1a0030]/60'}`}>Progresso do Ciclo</p>
+                  <span className="text-xs font-black text-amber-400">{comprasNoCiclo}/5</span>
+                </div>
+                {/* Progress bar */}
+                <div className={`h-3 rounded-full overflow-hidden ${darkMode ? 'bg-white/10' : 'bg-purple-100'} relative`}>
+                  <motion.div
+                    initial={{ width: 0 }}
+                    animate={{ width: `${progresso}%` }}
+                    transition={{ duration: 1, ease: 'easeOut' }}
+                    className="h-full rounded-full bg-gradient-to-r from-amber-600 via-amber-400 to-yellow-300 relative"
+                  >
+                    <div className="absolute inset-0 bg-white/30 rounded-full animate-pulse" style={{ animationDuration: '2s' }} />
+                  </motion.div>
+                </div>
+                <p className={`text-xs mt-3 text-center font-semibold ${darkMode ? 'text-white/70' : 'text-[#1a0030]/70'}`}>
+                  {faltam === 0
+                    ? '🎉 Nível máximo atingido!'
+                    : faltam === 1
+                      ? '🔥 Falta apenas <strong>1 compra</strong> para o próximo nível!'
+                      : `⚡ Faltam <strong>${faltam} compras</strong> para o Nível ${nivel + 1}`}
+                </p>
+                <p className={`text-[10px] mt-1 text-center ${darkMode ? 'text-white/40' : 'text-[#1a0030]/40'}`}>
+                  Ao atingir o Nível 5, você ganha 1 produto grátis!
+                </p>
+              </div>
+            )}
+
+            {nivel === 5 && !recompensaDisponivel && !rewardClaimed && (
+              <div className={`p-4 rounded-2xl border text-center ${darkMode ? 'bg-white/5 border-purple-500/10' : 'bg-white border-purple-950/10 shadow-sm'}`}>
+                <p className="text-2xl mb-1">🚀</p>
+                <p className="font-black text-sm">Nível máximo atingido!</p>
+                <p className={`text-xs mt-1 ${darkMode ? 'text-white/50' : 'text-[#1a0030]/50'}`}>
+                  Continue comprando para iniciar um novo ciclo e ganhar mais recompensas!
+                </p>
+              </div>
+            )}
+
+            {/* Level Steps */}
+            <div className={`p-4 rounded-2xl border ${darkMode ? 'bg-white/5 border-purple-500/10' : 'bg-white border-purple-950/10 shadow-sm'}`}>
+              <p className={`text-[11px] font-black uppercase tracking-wider mb-4 ${darkMode ? 'text-white/60' : 'text-[#1a0030]/60'}`}>Níveis do Ciclo</p>
+              <div className="space-y-3">
+                {[1, 2, 3, 4, 5].map((lv) => {
+                  const achieved = comprasNoCiclo >= lv;
+                  const isCurrent = comprasNoCiclo === lv;
+                  const icons = ['🥉', '🥈', '🥇', '💎', '🏆'];
+                  const names = ['Bronze', 'Prata', 'Ouro', 'Diamante', 'Campeão'];
+                  return (
+                    <div key={lv} className={`flex items-center gap-3 p-2.5 rounded-xl transition-all ${
+                      isCurrent
+                        ? 'bg-amber-500/15 border border-amber-400/40'
+                        : achieved
+                          ? darkMode ? 'bg-white/5' : 'bg-purple-50/50'
+                          : 'opacity-35'
+                    }`}>
+                      <div className={`w-9 h-9 rounded-full flex items-center justify-center text-lg flex-shrink-0 ${
+                        achieved ? 'bg-amber-400/20' : darkMode ? 'bg-white/5' : 'bg-purple-100'
+                      }`}>
+                        {achieved ? icons[lv - 1] : lv}
+                      </div>
+                      <div className="flex-1 text-left">
+                        <p className={`text-xs font-bold ${achieved ? '' : darkMode ? 'text-white/40' : 'text-[#1a0030]/40'}`}>
+                          Nível {lv} — {names[lv - 1]}
+                        </p>
+                        <p className={`text-[10px] ${darkMode ? 'text-white/40' : 'text-[#1a0030]/40'}`}>
+                          {lv} compra{lv !== 1 ? 's' : ''} no ciclo
+                          {lv === 5 ? ' 🎁 Recompensa!' : ''}
+                        </p>
+                      </div>
+                      {achieved && (
+                        <Check size={14} className="text-amber-400 flex-shrink-0" />
+                      )}
+                      {isCurrent && (
+                        <div className="w-2 h-2 rounded-full bg-amber-400 animate-ping flex-shrink-0" />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Total stats */}
+            <div className={`p-4 rounded-2xl border ${darkMode ? 'bg-white/5 border-purple-500/10' : 'bg-white border-purple-950/10 shadow-sm'}`}>
+              <p className={`text-[11px] font-black uppercase tracking-wider mb-3 ${darkMode ? 'text-white/60' : 'text-[#1a0030]/60'}`}>Suas Estatísticas</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="text-center">
+                  <p className="text-2xl font-black">{totalCompras}</p>
+                  <p className={`text-[10px] font-bold uppercase tracking-wider mt-0.5 ${darkMode ? 'text-white/50' : 'text-[#1a0030]/50'}`}>Compras Totais</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-2xl font-black text-amber-400">{Math.floor(totalCompras / 5)}</p>
+                  <p className={`text-[10px] font-bold uppercase tracking-wider mt-0.5 ${darkMode ? 'text-white/50' : 'text-[#1a0030]/50'}`}>Prêmios Ganhos</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Empty state */}
+            {totalCompras === 0 && (
+              <div className={`p-6 rounded-2xl border text-center ${darkMode ? 'bg-white/5 border-purple-500/10' : 'bg-white border-purple-950/10 shadow-sm'}`}>
+                <div className="text-5xl mb-3">🌱</div>
+                <h3 className="font-bold text-base mb-1">Comece sua jornada!</h3>
+                <p className={`text-xs leading-relaxed ${darkMode ? 'text-white/55' : 'text-[#1a0030]/55'}`}>
+                  A cada compra concluída você sobe 1 nível. Ao chegar ao Nível 5, você ganha 1 produto grátis de qualquer sabor!
+                </p>
+                <button
+                  onClick={onBack}
+                  className="mt-4 py-2.5 px-6 rounded-xl text-white font-bold text-sm bg-gradient-to-r from-purple-700 to-purple-500 shadow-md active:scale-98 transition-all"
+                >
+                  🛍️ Explorar Catálogo
+                </button>
+              </div>
+            )}
           </>
         )}
       </div>
@@ -1907,90 +2183,107 @@ export function AdminDashboard({
           </div>
         )}
 
-        {/* ── STOCK TAB ───────────────────────────────────────────────────── */}
-        {tab === 'stock' && (
-          <div className="space-y-4">
-            <h2 className="font-brand text-lg text-purple-400">Controle de Estoque</h2>
+        {tab === 'stock' && (() => {
+          const outFlavors  = lowStockFlavors.filter(f => f.stock === 0);
+          const warnFlavors = lowStockFlavors.filter(f => f.stock !== null && f.stock > 0 && f.stock <= 5);
+          return (
+            <div className="space-y-4">
 
-            {/* Low stock alert */}
-            {lowStockFlavors.length > 0 && (
-              <div className={`p-4 rounded-2xl border ${
-                darkMode ? 'bg-red-500/10 border-red-500/20' : 'bg-red-50 border-red-200'
-              }`}>
-                <p className="text-xs font-bold text-red-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                  <AlertCircle size={13} /> Estoque Baixo / Zerado
-                </p>
-                {lowStockFlavors.map((f, i) => (
-                  <div key={i} className="flex justify-between items-center text-xs py-1 border-b border-red-500/10 last:border-0">
-                    <span className="font-bold">{f.productName} — {f.flavorName}</span>
-                    <span className={`font-black ${f.stock === 0 ? 'text-red-500' : 'text-amber-400'}`}>
-                      {f.stock === 0 ? 'ESGOTADO' : `${f.stock} un.`}
-                    </span>
+              {/* ── Header ── */}
+              <div className="flex items-center justify-between">
+                <h2 className="font-brand text-xl text-purple-400">📦 Estoque</h2>
+                {lowStockFlavors.length > 0 && (
+                  <div className="flex items-center gap-1.5 text-[10px] font-bold text-red-400 bg-red-500/10 border border-red-500/25 px-2.5 py-1 rounded-full">
+                    <div className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
+                    {lowStockFlavors.length} alerta(s)
                   </div>
-                ))}
+                )}
               </div>
-            )}
 
-            {/* Stock per product/flavor */}
-            {products.map((p) => (
-              <div key={p.id} className={`p-4 rounded-2xl border text-left ${
-                darkMode ? 'bg-white/5 border-purple-500/10' : 'bg-white border-purple-950/10 shadow-sm'
-              }`}>
-                <h4 className="font-brand text-base text-purple-400 mb-3">{p.name}</h4>
-                <div className="space-y-2">
-                  {p.flavors.map((f) => (
-                    <div key={f.id} className={`flex items-center gap-2 p-2.5 rounded-xl border ${
-                      !f.active
-                        ? 'opacity-50 border-red-500/20 bg-red-500/5'
-                        : f.stock === 0
-                          ? 'border-red-500/20 bg-red-500/5'
-                          : darkMode ? 'border-white/5 bg-black/10' : 'border-purple-900/10 bg-purple-50/10'
-                    }`}>
-                      <span className="text-base">{f.emoji}</span>
-                      <span className="flex-1 text-xs font-bold truncate">{f.name}</span>
-                      
-                      {/* Toggle active */}
-                      <button
-                        onClick={() => handleToggleFlavor(p.id, f.id)}
-                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                          f.active
-                            ? 'text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/10'
-                            : 'text-red-400 border-red-500/30 hover:bg-red-500/10'
-                        }`}
-                      >
-                        {f.active ? 'Ativo' : 'OFF'}
-                      </button>
-
-                      {/* Stock quantity */}
-                      <div className="flex items-center gap-1">
-                        <input
-                          type="number"
-                          min="0"
-                          placeholder="∞"
-                          value={f.stock ?? ''}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            handleSetFlavorStock(p.id, f.id, val === '' ? null : Number(val));
-                          }}
-                          className={`w-14 text-center text-xs font-bold rounded-lg p-1 border ${
-                            darkMode ? 'bg-white/5 border-purple-500/15 text-white' : 'bg-purple-50 border-purple-500/20 text-[#1a0030]'
-                          }`}
-                        />
-                        <span className="text-[9px] opacity-50">un</span>
+              {/* ── Esgotados ── */}
+              {outFlavors.length > 0 && (
+                <div className={`p-4 rounded-2xl border ${
+                  darkMode ? 'bg-red-500/10 border-red-500/25' : 'bg-red-50 border-red-300'
+                }`}>
+                  <p className="text-xs font-black text-red-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                    <AlertCircle size={13} /> 🔴 Esgotados — {outFlavors.length} item(s)
+                  </p>
+                  <div className="space-y-2">
+                    {outFlavors.map((f, i) => (
+                      <div key={i} className="flex items-center justify-between">
+                        <div>
+                          <p className="text-xs font-bold">{f.flavorName}</p>
+                          <p className={`text-[10px] ${darkMode ? 'text-white/40' : 'text-[#1a0030]/40'}`}>{f.productName}</p>
+                        </div>
+                        <span className="text-[10px] font-black text-red-400 bg-red-500/15 px-2 py-0.5 rounded-full">ESGOTADO</span>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
-                <button
-                  onClick={() => setProducts(prev => prev)} // Triggers setProducts -> Supabase via the async wrapper
-                  className="mt-3 w-full py-2 text-xs font-bold rounded-xl bg-purple-500/10 text-purple-400 border border-purple-500/20 hover:bg-purple-500/15"
-                >
-                  💾 Salvar Estoque — {p.name}
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
+              )}
+
+              {/* ── Críticos (1-5 un.) ── */}
+              {warnFlavors.length > 0 && (
+                <div className={`p-4 rounded-2xl border ${
+                  darkMode ? 'bg-amber-500/10 border-amber-500/25' : 'bg-amber-50 border-amber-300'
+                }`}>
+                  <p className="text-xs font-black text-amber-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                    <AlertCircle size={13} /> 🟡 Estoque Baixo — {warnFlavors.length} item(s)
+                  </p>
+                  <div className="space-y-3">
+                    {warnFlavors.map((f, i) => {
+                      const pct = Math.max(5, ((f.stock ?? 0) / 10) * 100);
+                      return (
+                        <div key={i}>
+                          <div className="flex items-center justify-between mb-1">
+                            <div>
+                              <p className="text-xs font-bold">{f.flavorName}</p>
+                              <p className={`text-[10px] ${darkMode ? 'text-white/40' : 'text-[#1a0030]/40'}`}>{f.productName}</p>
+                            </div>
+                            <span className="text-xs font-black text-amber-400">{f.stock} un.</span>
+                          </div>
+                          <div className={`h-1.5 rounded-full overflow-hidden ${darkMode ? 'bg-white/5' : 'bg-amber-100'}`}>
+                            <div className="h-full rounded-full bg-gradient-to-r from-amber-600 to-amber-400"
+                              style={{ width: `${Math.min(pct, 100)}%` }} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* ── Por Produto ── */}
+              {products.map((p) => (
+                <StockProductCard
+                  key={p.id}
+                  product={p}
+                  darkMode={darkMode}
+                  onToggleFlavor={handleToggleFlavor}
+                  onSetStock={handleSetFlavorStock}
+                  onSave={async (product) => {
+                    // Log adjustments before saving
+                    const original = products.find(pr => pr.id === product.id);
+                    if (original) {
+                      for (const f of product.flavors) {
+                        const orig = original.flavors.find(of => of.id === f.id);
+                        if (orig && orig.stock !== f.stock) {
+                          await logStockAdjust(product.id, product.name, f.id, f.name, orig.stock, f.stock);
+                        }
+                      }
+                    }
+                    await upsertProduct(product);
+                    setProducts(prev => prev.map(pr => pr.id === product.id ? product : pr));
+                  }}
+                />
+              ))}
+
+              {/* ── Histórico de Movimentação ── */}
+              <StockHistoryPanel darkMode={darkMode} />
+
+            </div>
+          );
+        })()}
 
         {tab === 'products' && (
           <div className="space-y-4">
@@ -2308,6 +2601,14 @@ export default function App() {
     }
   };
 
+  // Supabase Realtime -- sync produtos em tempo real (estoque atualiza para todos)
+  useEffect(() => {
+    const channel = subscribeToProductChanges((updatedProduct) => {
+      setProducts(prev => prev.map(p => p.id === updatedProduct.id ? updatedProduct : p));
+    });
+    return () => { channel.unsubscribe(); };
+  }, []);
+
   // Supabase Realtime -- notifica ADMIN sobre NOVOS pedidos em tempo real
   useEffect(() => {
     if (screen !== 'admin') return;
@@ -2373,6 +2674,17 @@ export default function App() {
 
     // Persiste status no Supabase
     await dbUpdateOrderStatus(orderId, status);
+
+    // ✅ Só baixa o estoque quando o ADMIN confirmar a entrega ('chegou')
+    if (status === 'chegou' && order) {
+      await decrementStock(order.items, products, orderId);
+      // Atualiza ranking do cliente
+      await incrementCustomerRanking(order.phone, order.name);
+      // Recarrega produtos para refletir o novo estoque em tempo real
+      fetchProducts().then((updated) => {
+        if (updated.length > 0) setProducts(updated);
+      });
+    }
   };
 
   const handleDeleteOrder = async (orderId: number) => {
@@ -2568,49 +2880,107 @@ export default function App() {
             exit={{ opacity: 0 }}
             className="flex-1 flex flex-col h-screen overflow-hidden"
           >
-            <div className={`p-4 border-b flex justify-between items-center z-10 ${darkMode ? 'bg-[#0c0118]/95 border-purple-500/10' : 'bg-white/95 border-[#1a0030]/10'} backdrop-blur-md`}>
-              <div className="flex items-center gap-3">
-                <Logo size={32} />
-              </div>
-              
-              <div className="flex items-center gap-2">
-                <button 
-                  onClick={() => setDarkMode(!darkMode)}
-                  className={`p-2 rounded-xl transition-all border ${
-                    darkMode ? 'bg-white/5 border-purple-500/15 text-purple-400' : 'bg-purple-950/10 border-purple-800/10 text-purple-800'
-                  }`}
-                >
-                  {darkMode ? <Sun size={16} /> : <Moon size={16} />}
-                </button>
-                <button
-                  onClick={() => setScreen('history')}
-                  title="Meus Pedidos"
-                  className={`p-2 rounded-xl transition-all border ${
-                    darkMode ? 'bg-white/5 border-purple-500/15 text-purple-400' : 'bg-purple-950/10 border-purple-800/10 text-purple-800'
-                  }`}
-                >
-                  <History size={16} />
-                </button>
-                <button 
-                  onClick={handleLogout}
-                  title="Desconectar"
-                  className={`p-2 rounded-xl transition-all border ${
-                    darkMode ? 'bg-white/5 border-red-500/15 text-red-400' : 'bg-red-500/10 border-red-500/10 text-red-600'
-                  }`}
-                >
-                  <LogOut size={16} />
-                </button>
-              </div>
+            {/* ── TOP HEADER ── */}
+            <div
+              className={`px-4 pb-3 border-b flex justify-between items-center z-10 flex-shrink-0 ${
+                darkMode ? 'bg-[#0c0118]/95 border-purple-500/10' : 'bg-white/95 border-[#1a0030]/10'
+              } backdrop-blur-md`}
+              style={{ paddingTop: 'calc(0.75rem + env(safe-area-inset-top, 0px))' }}
+            >
+              <Logo size={32} />
+              <button 
+                onClick={() => setDarkMode(!darkMode)}
+                className={`p-2.5 rounded-xl transition-all border ${
+                  darkMode ? 'bg-white/5 border-purple-500/15 text-purple-400' : 'bg-purple-950/10 border-purple-800/10 text-purple-800'
+                }`}
+              >
+                {darkMode ? <Sun size={18} /> : <Moon size={18} />}
+              </button>
             </div>
 
-            <CatalogView 
-              darkMode={darkMode}
-              customer={customer}
-              products={products}
-              cart={cart}
-              setCart={setCart}
-              onOpenCart={() => setScreen('cart')}
-            />
+            {/* ── CATALOG (takes available space above bottom nav) ── */}
+            <div className="flex-1 overflow-hidden relative" style={{ paddingBottom: 'calc(64px + env(safe-area-inset-bottom, 0px))' }}>
+              <CatalogView 
+                darkMode={darkMode}
+                customer={customer}
+                products={products}
+                cart={cart}
+                setCart={setCart}
+                onOpenCart={() => setScreen('cart')}
+              />
+            </div>
+
+            {/* ── BOTTOM NAVIGATION BAR ── */}
+            <div
+              className={`fixed bottom-0 left-0 right-0 z-30 flex items-stretch border-t ${
+                darkMode
+                  ? 'bg-[#0a0115]/95 border-purple-500/10 backdrop-blur-xl'
+                  : 'bg-white/95 border-[#1a0030]/10 backdrop-blur-xl'
+              }`}
+              style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+            >
+              {/* Catálogo */}
+              <button
+                onClick={() => {}}
+                className={`flex-1 flex flex-col items-center justify-center gap-1 py-3 min-h-[56px] transition-all ${
+                  darkMode ? 'text-purple-400' : 'text-purple-600'
+                }`}
+              >
+                <Store size={22} strokeWidth={2} />
+                <span className="text-[10px] font-black tracking-wide uppercase">Loja</span>
+              </button>
+
+              {/* Pedidos */}
+              <button
+                onClick={() => setScreen('history')}
+                className={`flex-1 flex flex-col items-center justify-center gap-1 py-3 min-h-[56px] transition-all ${
+                  darkMode ? 'text-white/40 hover:text-purple-400' : 'text-[#1a0030]/40 hover:text-purple-600'
+                }`}
+              >
+                <History size={22} strokeWidth={2} />
+                <span className="text-[10px] font-bold tracking-wide uppercase">Pedidos</span>
+              </button>
+
+              {/* Ranking — destaque especial */}
+              <button
+                onClick={() => setScreen('ranking')}
+                className="flex-1 flex flex-col items-center justify-center gap-1 py-3 min-h-[56px] transition-all relative"
+              >
+                <div className="absolute -top-3 left-1/2 -translate-x-1/2 w-12 h-12 rounded-full bg-gradient-to-br from-amber-500 to-amber-400 flex items-center justify-center shadow-lg shadow-amber-500/30 border-2 border-amber-300/40">
+                  <Trophy size={22} className="text-white" strokeWidth={2.5} />
+                </div>
+                <span className="text-[10px] font-black tracking-wide uppercase text-amber-400 mt-5">Ranking</span>
+              </button>
+
+              {/* Carrinho (atalho) */}
+              <button
+                onClick={() => setScreen('cart')}
+                className={`flex-1 flex flex-col items-center justify-center gap-1 py-3 min-h-[56px] transition-all relative ${
+                  darkMode ? 'text-white/40 hover:text-purple-400' : 'text-[#1a0030]/40 hover:text-purple-600'
+                }`}
+              >
+                <div className="relative">
+                  <ShoppingCart size={22} strokeWidth={2} />
+                  {cart.length > 0 && (
+                    <span className="absolute -top-1.5 -right-2 w-4 h-4 rounded-full bg-purple-500 text-white text-[9px] font-black flex items-center justify-center">
+                      {cart.reduce((a, i) => a + i.qty, 0)}
+                    </span>
+                  )}
+                </div>
+                <span className="text-[10px] font-bold tracking-wide uppercase">Carrinho</span>
+              </button>
+
+              {/* Sair */}
+              <button
+                onClick={handleLogout}
+                className={`flex-1 flex flex-col items-center justify-center gap-1 py-3 min-h-[56px] transition-all ${
+                  darkMode ? 'text-white/30 hover:text-red-400' : 'text-[#1a0030]/30 hover:text-red-500'
+                }`}
+              >
+                <LogOut size={22} strokeWidth={2} />
+                <span className="text-[10px] font-bold tracking-wide uppercase">Sair</span>
+              </button>
+            </div>
           </motion.div>
         )}
 
@@ -2644,10 +3014,8 @@ export default function App() {
                 localStorage.setItem('fg_last_order', JSON.stringify(finalOrder));
                 setCart([]);
 
-                // Baixa no estoque (assíncrono, não bloqueia)
-                decrementStock(order.items, products).then(() => {
-                  fetchProducts().then((updated) => { if (updated.length > 0) setProducts(updated); });
-                });
+                // ℹ️ O estoque NÃO é baixado aqui.
+                // Ele só será decrementado quando o ADMIN confirmar a entrega (status 'chegou').
 
                 if (adminNotifEnabled) {
                   handleNotify('Novo Pedido!', `Cliente ${order.name} acabou de pedir ${order.items.length} item(s)!`);
@@ -2696,6 +3064,23 @@ export default function App() {
             />
           </motion.div>
         )}
+
+        {screen === 'ranking' && customer && (
+          <motion.div
+            key="ranking"
+            initial={{ opacity: 0, x: 30 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -30 }}
+            className="flex-1 flex flex-col h-screen overflow-hidden"
+          >
+            <RankingView
+              darkMode={darkMode}
+              customer={customer}
+              onBack={() => setScreen('store')}
+            />
+          </motion.div>
+        )}
+
 
         {screen === 'admin' && (
           <motion.div

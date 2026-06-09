@@ -162,9 +162,10 @@ export async function deleteOrder(id: number): Promise<boolean> {
 
 export async function decrementStock(
   items: CartItem[],
-  products: Product[]
+  products: Product[],
+  orderId?: number
 ): Promise<void> {
-  // Group items by productId and build updated products
+  // Build updated products with decremented stock
   const updatedProducts: Product[] = products.map((product) => {
     const hasItems = items.some((i) => i.productId === product.id);
     if (!hasItems) return product;
@@ -184,13 +185,61 @@ export async function decrementStock(
     };
   });
 
-  // Persist only changed products
+  // Persist changed products and log each movement
   for (const product of updatedProducts) {
     const original = products.find((p) => p.id === product.id);
-    if (original && JSON.stringify(original.flavors) !== JSON.stringify(product.flavors)) {
-      await upsertProduct(product);
+    if (!original || JSON.stringify(original.flavors) === JSON.stringify(product.flavors)) continue;
+
+    await upsertProduct(product);
+
+    // Log each flavor stock change
+    for (const flavor of product.flavors) {
+      const origFlavor = original.flavors.find((f) => f.id === flavor.id);
+      if (!origFlavor || origFlavor.stock === null || origFlavor.stock === flavor.stock) continue;
+      const item = items.find((i) => i.productId === product.id && i.flavorId === flavor.id);
+      if (!item) continue;
+      await logAudit('stock_venda', product.id, {
+        productName: product.name,
+        flavorId: flavor.id,
+        flavorName: flavor.name,
+        qty: item.qty,
+        before: origFlavor.stock,
+        after: flavor.stock,
+        orderId: orderId ?? null,
+      });
     }
   }
+}
+
+export async function logStockAdjust(
+  productId: number,
+  productName: string,
+  flavorId: number,
+  flavorName: string,
+  before: number | null,
+  after: number | null
+): Promise<void> {
+  await logAudit('stock_ajuste', productId, {
+    productName,
+    flavorId,
+    flavorName,
+    before,
+    after,
+    adjustedAt: new Date().toISOString(),
+    adjustedBy: 'admin',
+  });
+}
+
+export async function fetchStockLog(limit = 40): Promise<any[]> {
+  const { data, error } = await supabase
+    .from('audit_log')
+    .select('*')
+    .or('action.eq.stock_venda,action.eq.stock_ajuste')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  if (error) { console.error('Erro ao buscar log de estoque:', error); return []; }
+  return data || [];
 }
 
 // ── AUDIT LOG ────────────────────────────────────────────────────────────────
@@ -244,6 +293,37 @@ export function subscribeToNewOrders(callback: (order: Order) => void) {
   return channel;
 }
 
+export function subscribeToProductChanges(callback: (updated: Product) => void) {
+  const channel = supabase
+    .channel('realtime-produtos')
+    .on(
+      'postgres_changes',
+      { event: 'UPDATE', schema: 'public', table: 'produtos' },
+      (payload) => {
+        const row = payload.new as any;
+        const product: Product = {
+          id: row.id,
+          name: row.name,
+          badge: row.badge || '',
+          description: row.description || '',
+          flavors: (Array.isArray(row.flavors) ? row.flavors : []).map((f: any) => ({
+            id: f.id,
+            name: f.name,
+            price: f.price,
+            emoji: f.emoji,
+            color: f.color,
+            stock: f.stock ?? null,
+            active: f.active !== false,
+          })),
+        };
+        callback(product);
+      }
+    )
+    .subscribe();
+
+  return channel;
+}
+
 export function subscribeToOrderStatus(orderId: number, callback: (status: string) => void) {
   const channel = supabase
     .channel(`order-status-${orderId}`)
@@ -258,4 +338,109 @@ export function subscribeToOrderStatus(orderId: number, callback: (status: strin
     .subscribe();
 
   return channel;
+}
+
+// ── CUSTOMER RANKING ─────────────────────────────────────────────────────────
+// Regra: 1 compra concluída = 1 nível. Ciclo de 5. Ao atingir nível 5, recompensa
+// é desbloqueada e o ciclo reinicia do nível 1 na próxima compra.
+
+export interface CustomerRanking {
+  id?: number;
+  telefone: string;
+  nome: string;
+  total_compras: number;
+  nivel_atual: number;
+  compras_no_ciclo: number; // 1-5 dentro do ciclo atual
+  recompensa_disponivel: boolean;
+  updated_at?: string;
+}
+
+/** Calcula o estado do ranking a partir do total de compras concluídas */
+export function calcRanking(totalCompras: number, recompensaDisponivel: boolean): {
+  nivel: number;
+  comprasNoCiclo: number;
+  recompensa: boolean;
+} {
+  if (totalCompras === 0) return { nivel: 0, comprasNoCiclo: 0, recompensa: false };
+  const comprasNoCiclo = totalCompras % 5 === 0 ? 5 : totalCompras % 5;
+  const nivel = comprasNoCiclo; // 1 compra no ciclo = nível 1, ..., 5 = nível 5
+  const recompensa = comprasNoCiclo === 5 || recompensaDisponivel;
+  return { nivel, comprasNoCiclo, recompensa };
+}
+
+export async function fetchCustomerRanking(phone: string): Promise<CustomerRanking | null> {
+  try {
+    const { data, error } = await supabase
+      .from('customer_ranking')
+      .select('*')
+      .eq('telefone', phone)
+      .maybeSingle();
+
+    if (error) {
+      if ((error as any).code === 'PGRST205' || (error as any).code === '42P01') {
+        // Tabela não existe ainda — retorna null silenciosamente
+        return null;
+      }
+      console.error('Erro ao buscar ranking:', error);
+      return null;
+    }
+    return data as CustomerRanking | null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Incrementa o total de compras do cliente em +1 e recalcula nível/ciclo.
+ * Chamado pelo admin quando marca um pedido como 'chegou'.
+ */
+export async function incrementCustomerRanking(phone: string, nome: string): Promise<CustomerRanking | null> {
+  try {
+    // Busca o registro atual
+    const current = await fetchCustomerRanking(phone);
+
+    const prevTotal = current?.total_compras ?? 0;
+    const newTotal = prevTotal + 1;
+
+    const { nivel, comprasNoCiclo, recompensa } = calcRanking(newTotal, false);
+
+    const payload: Omit<CustomerRanking, 'id' | 'updated_at'> = {
+      telefone: phone,
+      nome,
+      total_compras: newTotal,
+      nivel_atual: nivel,
+      compras_no_ciclo: comprasNoCiclo,
+      recompensa_disponivel: recompensa,
+    };
+
+    const { data, error } = await supabase
+      .from('customer_ranking')
+      .upsert(payload, { onConflict: 'telefone' })
+      .select()
+      .single();
+
+    if (error) {
+      if ((error as any).code === 'PGRST205' || (error as any).code === '42P01') return null;
+      console.error('Erro ao atualizar ranking:', error);
+      return null;
+    }
+    return data as CustomerRanking;
+  } catch {
+    return null;
+  }
+}
+
+/** Marca a recompensa como utilizada e reinicia o ciclo */
+export async function markRewardUsed(phone: string): Promise<boolean> {
+  try {
+    const { error } = await supabase
+      .from('customer_ranking')
+      .update({ recompensa_disponivel: false })
+      .eq('telefone', phone);
+
+    if (error) { console.error('Erro ao marcar recompensa usada:', error); return false; }
+    return true;
+  } catch {
+    return false;
+  }
 }

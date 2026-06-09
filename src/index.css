@@ -28,6 +28,21 @@ input, select, textarea {
   -webkit-tap-highlight-color: transparent;
 }
 
+/* ── Safe Area (Notch / Dynamic Island / Punch-hole) ───────────── */
+:root {
+  --sat: env(safe-area-inset-top, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+}
+
+/* Garante que o app ocupa toda a tela em PWA instalado */
+html, body, #root {
+  height: 100%;
+  height: -webkit-fill-available;
+  overscroll-behavior: none;
+}
+
 /* ── Custom scrollbar ──────────────────────────────────────────── */
 ::-webkit-scrollbar {
   width: 4px;
