@@ -358,6 +358,19 @@ export interface CustomerRanking {
   updated_at?: string;
 }
 
+/**
+ * Normaliza número de telefone: remove formatação e DDI +55 se presente.
+ * Ex: "+55 (34) 99100-0001" → "34991000001"
+ */
+function normalizePhone(phone: string): string {
+  let clean = phone.replace(/\D/g, '');
+  // Remove DDI 55 do Brasil se o número tiver mais de 11 dígitos
+  if (clean.length > 11 && clean.startsWith('55')) {
+    clean = clean.slice(2);
+  }
+  return clean;
+}
+
 /** Calcula o estado do ranking a partir do total de compras concluídas */
 export function calcRanking(totalCompras: number, recompensaDisponivel: boolean): {
   nivel: number;
@@ -373,8 +386,8 @@ export function calcRanking(totalCompras: number, recompensaDisponivel: boolean)
 
 export async function fetchCustomerRanking(phone: string): Promise<CustomerRanking | null> {
   try {
-    // Normaliza o telefone para sempre buscar sem formatação
-    const phoneClean = phone.replace(/\D/g, '');
+    // Normaliza o telefone para sempre buscar sem formatação e sem DDI
+    const phoneClean = normalizePhone(phone);
 
     const { data, error } = await supabase
       .from('customer_ranking')
@@ -401,9 +414,8 @@ export async function fetchCustomerRanking(phone: string): Promise<CustomerRanki
  */
 export async function incrementCustomerRanking(phone: string, nome: string): Promise<CustomerRanking | null> {
   try {
-    // Normaliza o telefone — usa sempre o número limpo (sem formatação)
-    // para evitar mismatch entre "(34) 99692-1533" e "34996921533"
-    const phoneClean = phone.replace(/\D/g, '');
+    // Normaliza o telefone — remove formatação e DDI +55 se presente
+    const phoneClean = normalizePhone(phone);
 
     // Busca registro atual pelo telefone limpo
     const current = await fetchCustomerRanking(phoneClean);
